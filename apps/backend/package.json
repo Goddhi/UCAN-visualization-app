@@ -1,0 +1,11 @@
+{
+    "name": "ucan-visualization-backend",
+    "private": true,
+    "scripts": {
+        "dev": "go run cmd/server/main.go",
+        "dev:reload": "air",
+        "build": "go build -o bin/server cmd/server/main.go",
+        "lint": "golangci-lint run ./...",
+        "test": "go test ./..."
+    }
+}
