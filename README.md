@@ -1,135 +1,153 @@
-# Turborepo starter
+# UCAN Visualization Web App
 
-This Turborepo starter is maintained by the Turborepo core team.
+UCAN Visualization Web App is a comprehensive developer tool for parsing, validating, and visualizing UCAN (User Controlled Authorization Networks) delegation chains. This application addresses the core challenge of debugging decentralized authorization by providing visual feedback and detailed error reporting for UCAN tokens.
 
-## Using this example
+## Quick Start
 
-Run the following command:
+### Prerequisites
 
-```sh
-npx create-turbo@latest
+- **Node.js** >= 18
+- **Yarn** 1.22.22 (or npm/pnpm)
+- **Go** >= 1.21 (for backend)
+- **Air** (Go hot reload tool)
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd UCAN
+   ```
+
+2. **Install dependencies**
+   ```bash
+   yarn install
+   ```
+
+3. **Install Go tools** (required for backend hot reload)
+   ```bash
+   make install-tools
+   ```
+   This installs Air for Go hot reloading.
+
+### Running the Application
+
+**Development Mode (Both apps)**
+```bash
+yarn dev
+```
+Runs both frontend (port 3000) and backend in parallel.
+
+```bash
+yarn dev:reload
 ```
 
-## What's inside?
+Runs both frontend (port 3000) and backend (using Air) in parallel, with hot reload on the backend.
 
-This Turborepo includes the following packages/apps:
+**Frontend Only**
+```bash
+yarn dev-frontend
+```
+Starts Next.js frontend on http://localhost:3000
 
-### Apps and Packages
+**Backend Only**
+```bash
+yarn dev-backend
+```
+Starts Go backend with Air hot reloading.
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+## Available Commands
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+### Root Commands (from project root)
 
-### Utilities
+| Command | Description |
+|---------|-------------|
+| `yarn dev` | Run both frontend and backend in parallel |
+| `yarn dev-frontend` | Run only the frontend application |
+| `yarn dev-backend` | Run only the backend with Air hot reload |
+| `yarn dev:reload` | Run both apps with hot reload enabled |
+| `yarn build` | Build all applications |
+| `yarn lint` | Lint all applications |
+| `yarn format` | Format code with Prettier |
+| `yarn check-types` | Type-check all TypeScript files |
 
-This Turborepo has some additional tools already setup for you:
+### Backend Commands (from apps/backend)
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
+| Command | Description |
+|---------|-------------|
+| `yarn dev` | Run backend server (direct Go run) |
+| `yarn dev:reload` | Run backend with Air hot reload |
+| `yarn build` | Build backend binary to bin/server |
+| `yarn lint` | Run golangci-lint |
+| `yarn test` | Run Go tests |
 
-### Build
+### Frontend Commands (from apps/frontend)
 
-To build all apps and packages, run the following command:
+| Command | Description |
+|---------|-------------|
+| `yarn dev` | Run frontend with Turbopack (fast refresh) |
+| `yarn dev:reload` | Run frontend in standard mode |
+| `yarn build` | Build production-ready frontend |
+| `yarn start` | Start production server |
+| `yarn lint` | Run ESLint |
+| `yarn check-types` | Type-check TypeScript |
+
+### Makefile Commands
+
+| Command | Description |
+|---------|-------------|
+| `make install-tools` | Install Air for Go hot reloading |
+
+## Project Structure
 
 ```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build
-yarn dlx turbo build
-pnpm exec turbo build
+UCAN/
+├── apps/
+│   ├── backend/          # Go backend API
+│   │   ├── cmd/          # Application entry points
+│   │   ├── internal/     # Internal packages
+│   │   │   ├── api/      # HTTP handlers and routing
+│   │   │   ├── config/   # Configuration management
+│   │   │   ├── models/   # Data models
+│   │   │   └── services/ # Business logic services
+│   │   ├── pkg/          # Public packages
+│   │   └── test/         # Tests and fixtures
+│   └── frontend/         # Next.js frontend
+│       └── app/          # Next.js 15 app directory
+├── packages/
+│   ├── eslint-config/    # Shared ESLint configurations
+│   ├── typescript-config/# Shared TypeScript configurations
+│   └── ui/               # Shared UI components
+└── turbo.json           # Turborepo configuration
 ```
 
-You can build a specific package by using a [filter](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters):
+### Features
 
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build --filter=docs
+**Delegation Chain Visualizer**
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build --filter=docs
-yarn exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
-```
+Visual tree/graph showing who delegated what to whom
+Interactive exploration of trust relationships
+Color-coded validity indicators (valid/expired/invalid)
+See the complete authorization path from root to end user
 
-### Develop
+**Invocation Inspector**
 
-To develop all apps and packages, run the following command:
+Paste a UCAN invocation and see exactly what it's trying to do
+View the capability being invoked (resource, ability, caveats)
+Inspect all attached proofs in the invocation
+Understand invocation metadata (issuer, audience, timestamps)
 
-```
-cd my-turborepo
+**Capability Breakdown**
 
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev
+Parse and display resources, abilities, and attenuations in human-readable format
+See technical capability structure translated to plain English
+Understand what permissions are granted and what restrictions apply
+Identify how capabilities were narrowed through delegation (attenuation)
 
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev
-yarn exec turbo dev
-pnpm exec turbo dev
-```
+**Proof Chain Validator**
 
-You can develop a specific package by using a [filter](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters):
-
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev --filter=web
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev --filter=web
-yarn exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo login
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo login
-yarn exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-```
-# With [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation) installed (recommended)
-turbo link
-
-# Without [global `turbo`](https://turborepo.com/docs/getting-started/installation#global-installation), use your package manager
-npx turbo link
-yarn exec turbo link
-pnpm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.com/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.com/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.com/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.com/docs/reference/configuration)
-- [CLI Usage](https://turborepo.com/docs/reference/command-line-reference)
+Check if a UCAN chain is valid and where it breaks if invalid
+Cryptographic signature verification
+Time-based validation (expiration, not-before)
+Capability escalation detection
+Clear root cause analysis with fix suggestions
