@@ -16,257 +16,294 @@ func NewService() *Service {
 	return &Service{}
 }
 
-// ParseDelegation parses a UCAN delegation token (CAR format)
+// ParseDelegation parses a UCAN delegation from CAR format using go-ucanto
 func (s *Service) ParseDelegation(tokenBytes []byte) (*models.DelegationResponse, error) {
-	// Use delegation.Extract to parse CAR-encoded delegation
 	del, err := delegation.Extract(tokenBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract delegation: %w", err)
 	}
 
-	issuer := del.Issuer().DID().String()
-	audience := del.Audience().DID().String()
+	return s.parseDelegationFromUCAN(del, 0)
+}
 
-	var subject string
+// ParseDelegationChain parses delegation chain with proof resolution
+func (s *Service) ParseDelegationChain(tokenBytes []byte) ([]*models.DelegationResponse, error) {
+	del, err := delegation.Extract(tokenBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract delegation: %w", err)
+	}
 
+	return s.parseChain(del), nil
+}
+
+// ParseInvocation performs comprehensive invocation analysis
+func (s *Service) ParseInvocation(tokenBytes []byte) (*models.InvocationResponse, error) {
+	delegation, err := s.ParseDelegation(tokenBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	// Comprehensive invocation analysis
+	invocationAnalysis := s.analyzeInvocation(delegation)
+	capabilityAnalysis := s.analyzeCapabilities(delegation.Capabilities)
+
+	var task *models.TaskInfo
+	if invocationAnalysis.IsInvocation {
+		task = &models.TaskInfo{
+			Action:      invocationAnalysis.PrimaryAction,
+			Resource:    invocationAnalysis.TargetResource,
+			Constraints: invocationAnalysis.Constraints,
+			Issuer:      delegation.Issuer,
+			Target:      delegation.Audience,
+			TaskType:    invocationAnalysis.TaskType,
+			Permissions: invocationAnalysis.RequiredPermissions,
+		}
+	}
+
+	return &models.InvocationResponse{
+		Delegation:          delegation,
+		IsInvocation:        invocationAnalysis.IsInvocation,
+		Task:                task,
+		InvocationAnalysis:  invocationAnalysis,
+		CapabilityAnalysis:  capabilityAnalysis,
+	}, nil
+}
+
+// parseDelegationFromUCAN converts go-ucanto delegation to our model
+func (s *Service) parseDelegationFromUCAN(del delegation.Delegation, level int) (*models.DelegationResponse, error) {
 	// Parse capabilities
-	capabilities := []models.CapabilityInfo{}
+	var capabilities []models.CapabilityInfo
 	for _, cap := range del.Capabilities() {
-		capInfo := models.CapabilityInfo{
-			With: cap.With(),
-			Can:  cap.Can(),
-			Nb:   s.extractCaveats(cap.Nb()),
-		}
-		capabilities = append(capabilities, capInfo)
+		capabilities = append(capabilities, models.CapabilityInfo{
+			With:     cap.With(),
+			Can:      cap.Can(),
+			Nb:       s.extractCaveats(cap.Nb()),
+			Category: s.categorizeCapability(cap.Can()),
+		})
 	}
 
-	// Parse proofs, these are Links, not full delegations
-	proofs := []models.ProofInfo{}
-	for _, proofLink := range del.Proofs() {
-		proofInfo := models.ProofInfo{
-			CID: proofLink.String(),
-		}
-		proofs = append(proofs, proofInfo)
+	// Parse proofs
+	var proofs []models.ProofInfo
+	for i, proofLink := range del.Proofs() {
+		proofs = append(proofs, models.ProofInfo{
+			CID:   proofLink.String(),
+			Index: i,
+			Type:  "delegation",
+		})
 	}
 
-	// Extract time bounds
-	exp := del.Expiration()
+	// Parse timestamps
 	var expiration time.Time
-	if exp != nil {
+	if exp := del.Expiration(); exp != nil {
 		expiration = time.Unix(int64(*exp), 0)
 	}
 
-	nbf := del.NotBefore()
-	notBefore := time.Unix(int64(nbf), 0)
+	var notBefore time.Time
+	if nbf := del.NotBefore(); nbf != 0 {
+		notBefore = time.Unix(int64(nbf), 0)
+	}
 
-	nonce := string(del.Nonce())
-
-	facts := []interface{}{}
+	// Parse facts
+	var facts []interface{}
 	for _, fact := range del.Facts() {
 		facts = append(facts, fact)
 	}
 
 	return &models.DelegationResponse{
-		Issuer:       issuer,
-		Audience:     audience,
-		Subject:      subject,
+		Issuer:       del.Issuer().DID().String(),
+		Audience:     del.Audience().DID().String(),
 		Capabilities: capabilities,
 		Proofs:       proofs,
 		Expiration:   expiration,
 		NotBefore:    notBefore,
 		Facts:        facts,
-		Nonce:        nonce,
+		Nonce:        string(del.Nonce()),
 		Signature: models.SignatureInfo{
 			Algorithm: "EdDSA",
-			Valid:     nil,
 		},
-		CID: del.Link().String(),
+		CID:   del.Link().String(),
+		Level: level,
 	}, nil
 }
 
-// ParseDelegationWithProofs parses a delegation and recursively resolves proofs from the blockstore
-func (s *Service) ParseDelegationWithProofs(tokenBytes []byte) (*models.DelegationResponse, error) {
-	del, err := delegation.Extract(tokenBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract delegation: %w", err)
+// parseChain extracts full delegation chain
+func (s *Service) parseChain(del delegation.Delegation) []*models.DelegationResponse {
+	var chain []*models.DelegationResponse
+	
+	// Parse root delegation
+	root, _ := s.parseDelegationFromUCAN(del, 0)
+	chain = append(chain, root)
+
+	// Parse proof chain recursively
+	if len(del.Proofs()) > 0 {
+		br, _ := blockstore.NewBlockReader(blockstore.WithBlocksIterator(del.Blocks()))
+		chain = append(chain, s.parseProofs(del.Proofs(), br, 1)...)
 	}
 
-	// Extract issuer and audience
-	issuer := del.Issuer().DID().String()
-	audience := del.Audience().DID().String()
+	return chain
+}
 
-	// Extract subject (not available at delegation level in go-ucanto)
-	var subject string
+// parseProofs recursively processes proof delegations
+func (s *Service) parseProofs(proofLinks []ipld.Link, br blockstore.BlockReader, level int) []*models.DelegationResponse {
+	var proofs []*models.DelegationResponse
 
-	// Parse capabilities
-	capabilities := []models.CapabilityInfo{}
-	for _, cap := range del.Capabilities() {
-		capInfo := models.CapabilityInfo{
-			With: cap.With(),
-			Can:  cap.Can(),
-			Nb:   s.extractCaveats(cap.Nb()),
-		}
-		capabilities = append(capabilities, capInfo)
-	}
-
-	// Create a blockstore from the delegation's blocks to resolve proofs
-	br, err := blockstore.NewBlockReader(
-		blockstore.WithBlocksIterator(del.Blocks()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating block reader: %w", err)
-	}
-
-	// Resolve each proof
-	proofs := []models.ProofInfo{}
-	for _, proofLink := range del.Proofs() {
-		proofDel, err := delegation.NewDelegationView(proofLink, br)
-		// if not resolvable, return proof CID link
-		if err != nil {
-			proofs = append(proofs, models.ProofInfo{
-				CID:      proofLink.String(),
-				Issuer:   "unresolved",
-				Audience: "unresolved",
-			})
-			continue
-		}
-
-		// if successfully resolved the proof, Extract its data
-		proofExp := proofDel.Expiration()
-		var proofExpiration time.Time
-		if proofExp != nil {
-			proofExpiration = time.Unix(int64(*proofExp), 0)
-		}
-
-		proofNbf := proofDel.NotBefore()
-		proofNotBefore := time.Unix(int64(proofNbf), 0)
-
-		proofInfo := models.ProofInfo{
-			CID:          proofLink.String(),
-			Issuer:       proofDel.Issuer().DID().String(),
-			Audience:     proofDel.Audience().DID().String(),
-			Capabilities: []models.CapabilityInfo{},
-			Expiration:   proofExpiration,
-			NotBefore:    proofNotBefore,
-		}
-
-		// Extract capabilities from the proof
-		for _, cap := range proofDel.Capabilities() {
-			proofInfo.Capabilities = append(proofInfo.Capabilities, models.CapabilityInfo{
-				With: cap.With(),
-				Can:  cap.Can(),
-				Nb:   s.extractCaveats(cap.Nb()),
-			})
-		}
-
-		// Recursively resolve nested proofs if they exist
-		if len(proofDel.Proofs()) > 0 {
-			nestedProofs := []models.ProofInfo{}
-			for _, nestedLink := range proofDel.Proofs() {
-				nestedDel, err := delegation.NewDelegationView(nestedLink, br)
-				if err != nil {
-					// Nested proof not found
-					nestedProofs = append(nestedProofs, models.ProofInfo{
-						CID:      nestedLink.String(),
-						Issuer:   "unresolved",
-						Audience: "unresolved",
-					})
-					continue
-				}
-
-				nestedExp := nestedDel.Expiration()
-				var nestedExpiration time.Time
-				if nestedExp != nil {
-					nestedExpiration = time.Unix(int64(*nestedExp), 0)
-				}
-
-				nestedNbf := nestedDel.NotBefore()
-				nestedNotBefore := time.Unix(int64(nestedNbf), 0)
-
-				nestedInfo := models.ProofInfo{
-					CID:          nestedLink.String(),
-					Issuer:       nestedDel.Issuer().DID().String(),
-					Audience:     nestedDel.Audience().DID().String(),
-					Capabilities: []models.CapabilityInfo{},
-					Expiration:   nestedExpiration,
-					NotBefore:    nestedNotBefore,
-				}
-
-				for _, cap := range nestedDel.Capabilities() {
-					nestedInfo.Capabilities = append(nestedInfo.Capabilities, models.CapabilityInfo{
-						With: cap.With(),
-						Can:  cap.Can(),
-						Nb:   s.extractCaveats(cap.Nb()),
-					})
-				}
-
-				nestedProofs = append(nestedProofs, nestedInfo)
+	for _, link := range proofLinks {
+		if proofDel, err := delegation.NewDelegationView(link, br); err == nil {
+			if parsed, err := s.parseDelegationFromUCAN(proofDel, level); err == nil {
+				proofs = append(proofs, parsed)
 			}
-			proofInfo.Proofs = nestedProofs
+			
+			// Recurse into nested proofs
+			if len(proofDel.Proofs()) > 0 {
+				proofs = append(proofs, s.parseProofs(proofDel.Proofs(), br, level+1)...)
+			}
 		}
-
-		proofs = append(proofs, proofInfo)
 	}
 
-	// Extract time bounds
-	exp := del.Expiration()
-	var expiration time.Time
-	if exp != nil {
-		expiration = time.Unix(int64(*exp), 0)
-	}
-
-	nbf := del.NotBefore()
-	notBefore := time.Unix(int64(nbf), 0)
-
-	// Extract nonce
-	nonce := string(del.Nonce())
-
-	// Extract facts
-	facts := []interface{}{}
-	for _, fact := range del.Facts() {
-		facts = append(facts, fact)
-	}
-
-	return &models.DelegationResponse{
-		Issuer:       issuer,
-		Audience:     audience,
-		Subject:      subject,
-		Capabilities: capabilities,
-		Proofs:       proofs,
-		Expiration:   expiration,
-		NotBefore:    notBefore,
-		Facts:        facts,
-		Nonce:        nonce,
-		Signature: models.SignatureInfo{
-			Algorithm: "EdDSA",
-			Valid:     nil,
-		},
-		CID: del.Link().String(),
-	}, nil
+	return proofs
 }
 
-// extractCaveats extracts caveats from the capability's Nb field
+// Comprehensive invocation analysis
+func (s *Service) analyzeInvocation(delegation *models.DelegationResponse) *models.InvocationAnalysis {
+	analysis := &models.InvocationAnalysis{
+		IsInvocation:        false,
+		HasInvokeCapability: false,
+		TaskType:           "delegation",
+		InvokePatterns:     []string{},
+		RequiredPermissions: []string{},
+	}
+
+	// Check for different issuer and audience (delegation vs invocation)
+	if delegation.Issuer != delegation.Audience {
+		analysis.IsInvocation = true
+	}
+
+	// Analyze capabilities for invocation patterns
+	for _, cap := range delegation.Capabilities {
+		// Check for explicit invoke capabilities
+		if s.isInvokeCapability(cap.Can) {
+			analysis.HasInvokeCapability = true
+			analysis.TaskType = "invocation"
+			analysis.InvokePatterns = append(analysis.InvokePatterns, cap.Can)
+			analysis.PrimaryAction = cap.Can
+			analysis.TargetResource = cap.With
+		}
+
+		// Extract required permissions
+		if cap.Can != "" {
+			analysis.RequiredPermissions = append(analysis.RequiredPermissions, cap.Can)
+		}
+	}
+
+	// Determine task type based on capabilities
+	if analysis.HasInvokeCapability {
+		analysis.TaskType = "invocation"
+	} else if len(delegation.Capabilities) > 0 {
+		analysis.TaskType = "delegation"
+		analysis.PrimaryAction = delegation.Capabilities[0].Can
+		analysis.TargetResource = delegation.Capabilities[0].With
+	}
+
+	// Extract constraints from capabilities
+	analysis.Constraints = make(map[string]interface{})
+	for _, cap := range delegation.Capabilities {
+		for k, v := range cap.Nb {
+			analysis.Constraints[k] = v
+		}
+	}
+
+	return analysis
+}
+
+// Comprehensive capability analysis
+func (s *Service) analyzeCapabilities(capabilities []models.CapabilityInfo) *models.CapabilityAnalysis {
+	analysis := &models.CapabilityAnalysis{
+		Categories:     make(map[string][]models.CapabilityInfo),
+		TotalCount:     len(capabilities),
+		InvokeCount:    0,
+		DelegateCount:  0,
+		Permissions:    []string{},
+		Resources:      []string{},
+	}
+
+	for _, cap := range capabilities {
+		// Categorize capability
+		category := cap.Category
+		if category == "" {
+			category = "unknown"
+		}
+		
+		analysis.Categories[category] = append(analysis.Categories[category], cap)
+
+		// Count types
+		if s.isInvokeCapability(cap.Can) {
+			analysis.InvokeCount++
+		} else {
+			analysis.DelegateCount++
+		}
+
+		// Collect permissions and resources
+		if cap.Can != "" {
+			analysis.Permissions = append(analysis.Permissions, cap.Can)
+		}
+		if cap.With != "" {
+			analysis.Resources = append(analysis.Resources, cap.With)
+		}
+	}
+
+	return analysis
+}
+
+// Helper functions
+func (s *Service) isInvokeCapability(capability string) bool {
+	invokePatterns := []string{"invoke", "execute", "run", "call", "perform"}
+	
+	for _, pattern := range invokePatterns {
+		if cap := capability; len(cap) >= len(pattern) {
+			for i := 0; i <= len(cap)-len(pattern); i++ {
+				if cap[i:i+len(pattern)] == pattern {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func (s *Service) categorizeCapability(capability string) string {
+	switch {
+	case len(capability) >= 5 && capability[:5] == "store":
+		return "storage"
+	case len(capability) >= 5 && capability[:5] == "space":
+		return "space"
+	case len(capability) >= 6 && capability[:6] == "upload":
+		return "upload"
+	case s.isInvokeCapability(capability):
+		return "invocation"
+	case len(capability) >= 4 && capability[:4] == "blob":
+		return "blob"
+	case len(capability) >= 5 && capability[:5] == "index":
+		return "index"
+	default:
+		return "general"
+	}
+}
+
+// extractCaveats converts IPLD node to map
 func (s *Service) extractCaveats(nb any) map[string]interface{} {
 	result := make(map[string]interface{})
-
 	if nb == nil {
 		return result
 	}
 
-	if node, ok := nb.(ipld.Node); ok {
-		if node.Kind() == ipld.Kind_Map {
-			iter := node.MapIterator()
-			for !iter.Done() {
-				k, v, err := iter.Next()
-				if err != nil {
-					break
-				}
-
-				keyStr, err := k.AsString()
-				if err != nil {
-					continue
-				}
-
+	if node, ok := nb.(ipld.Node); ok && node.Kind() == ipld.Kind_Map {
+		iter := node.MapIterator()
+		for !iter.Done() {
+			k, v, err := iter.Next()
+			if err != nil {
+				break
+			}
+			if keyStr, err := k.AsString(); err == nil {
 				result[keyStr] = s.nodeToValue(v)
 			}
 		}
@@ -277,10 +314,6 @@ func (s *Service) extractCaveats(nb any) map[string]interface{} {
 
 // nodeToValue converts IPLD node to Go value
 func (s *Service) nodeToValue(node ipld.Node) interface{} {
-	if node == nil {
-		return nil
-	}
-
 	switch node.Kind() {
 	case ipld.Kind_Bool:
 		v, _ := node.AsBool()
@@ -297,29 +330,6 @@ func (s *Service) nodeToValue(node ipld.Node) interface{} {
 	case ipld.Kind_Bytes:
 		v, _ := node.AsBytes()
 		return v
-	case ipld.Kind_List:
-		var result []interface{}
-		iter := node.ListIterator()
-		for !iter.Done() {
-			_, val, err := iter.Next()
-			if err != nil {
-				break
-			}
-			result = append(result, s.nodeToValue(val))
-		}
-		return result
-	case ipld.Kind_Map:
-		result := make(map[string]interface{})
-		iter := node.MapIterator()
-		for !iter.Done() {
-			k, v, err := iter.Next()
-			if err != nil {
-				break
-			}
-			keyStr, _ := k.AsString()
-			result[keyStr] = s.nodeToValue(v)
-		}
-		return result
 	default:
 		return nil
 	}

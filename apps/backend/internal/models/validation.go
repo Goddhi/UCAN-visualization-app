@@ -10,6 +10,47 @@ type ValidationResult struct {
 	Summary   ValidationSummary `json:"summary"`
 }
 
+// ValidationChainResult for validating complete chains
+type ValidationChainResult struct {
+	Valid        bool                   `json:"valid"`
+	Chain        []ChainValidationLink  `json:"chain"`
+	RootCause    *ValidationError       `json:"rootCause,omitempty"`
+	Summary      ValidationSummary      `json:"summary"`
+	ChainInfo    ChainInfo              `json:"chainInfo"`
+}
+
+// ChainValidationLink represents validation of a single link in a chain
+type ChainValidationLink struct {
+	Level         int                 `json:"level"`
+	CID           string              `json:"cid"`
+	Issuer        string              `json:"issuer"`
+	Audience      string              `json:"audience"`
+	Capabilities  []CapabilityInfo    `json:"capabilities"`
+	Expiration    time.Time           `json:"expiration"`
+	NotBefore     time.Time           `json:"notBefore"`
+	Valid         bool                `json:"valid"`
+	Issues        []ValidationIssue   `json:"issues,omitempty"`
+	ProofValidation []ProofValidation `json:"proofValidation,omitempty"`
+}
+
+// ProofValidation represents validation of a specific proof
+type ProofValidation struct {
+	ProofCID     string            `json:"proofCid"`
+	Valid        bool              `json:"valid"`
+	Issues       []ValidationIssue `json:"issues,omitempty"`
+	Capabilities []CapabilityInfo  `json:"capabilities"`
+	Attenuation  AttenuationCheck  `json:"attenuation"`
+}
+
+// AttenuationCheck verifies that child capabilities are properly attenuated
+type AttenuationCheck struct {
+	Valid               bool     `json:"valid"`
+	Issues              []string `json:"issues,omitempty"`
+	ResourceMatch       bool     `json:"resourceMatch"`
+	AbilityMatch        bool     `json:"abilityMatch"`
+	CaveatProperlyAdded bool     `json:"caveatProperlyAdded"`
+}
+
 // ChainLink represents a single link in the validation chain
 type ChainLink struct {
 	Level      int              `json:"level"`

@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
-	"io"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -21,35 +21,19 @@ func NewParseHandler() *ParseHandler {
 	}
 }
 
-// ParseDelegation handles JSON requests with token string
+// ParseDelegation handles POST /api/parse/delegation
 func (h *ParseHandler) ParseDelegation(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[INFO] Parse request from %s", r.RemoteAddr)
+	log.Printf("[INFO] Parse delegation request from %s", r.RemoteAddr)
 
-	var req models.ParseRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("[ERROR] Failed to decode request: %v", err)
-		respondError(w, http.StatusBadRequest, "Invalid request body", err)
-		return
-	}
-
-	if req.Token == "" {
-		log.Printf("[WARN] Empty token in request")
-		respondError(w, http.StatusBadRequest, "Token is required", nil)
-		return
-	}
-
-	// Auto-detect format and normalize to bytes
-	tokenBytes, err := utils.NormalizeToken(req.Token, req.Format)
+	tokenBytes, err := h.extractTokenFromRequest(r)
 	if err != nil {
-		log.Printf("[ERROR] Failed to normalize token: %v", err)
-		respondError(w, http.StatusBadRequest, 
-			"Invalid token format. Supported formats: base64, hex. "+
-			"Or upload a .car file.", err)
+		log.Printf("[ERROR] Failed to extract token: %v", err)
+		respondError(w, http.StatusBadRequest, err.Error(), err)
 		return
 	}
 
-	log.Printf("[DEBUG] Parsing token of length %d bytes", len(tokenBytes))
-	
+	log.Printf("[DEBUG] Processing token of length %d bytes", len(tokenBytes))
+
 	result, err := h.parser.ParseDelegation(tokenBytes)
 	if err != nil {
 		log.Printf("[ERROR] Parse failed: %v", err)
@@ -61,41 +45,74 @@ func (h *ParseHandler) ParseDelegation(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
-// ParseFile handles multipart file uploads
+// ParseChain handles POST /api/parse/chain
+func (h *ParseHandler) ParseChain(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[INFO] Parse chain request from %s", r.RemoteAddr)
+
+	tokenBytes, err := h.extractTokenFromRequest(r)
+	if err != nil {
+		log.Printf("[ERROR] Failed to extract token: %v", err)
+		respondError(w, http.StatusBadRequest, err.Error(), err)
+		return
+	}
+
+	log.Printf("[DEBUG] Processing chain token of length %d bytes", len(tokenBytes))
+
+	result, err := h.parser.ParseDelegationChain(tokenBytes)
+	if err != nil {
+		log.Printf("[ERROR] Chain parse failed: %v", err)
+		respondError(w, http.StatusUnprocessableEntity, "Failed to parse delegation chain", err)
+		return
+	}
+
+	log.Printf("[INFO] Successfully parsed delegation chain: %d delegations", len(result))
+	respondJSON(w, http.StatusOK, result)
+}
+
+// ParseInvocation handles POST /api/parse/invocation
+func (h *ParseHandler) ParseInvocation(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[INFO] Parse invocation request from %s", r.RemoteAddr)
+
+	tokenBytes, err := h.extractTokenFromRequest(r)
+	if err != nil {
+		log.Printf("[ERROR] Failed to extract token: %v", err)
+		respondError(w, http.StatusBadRequest, err.Error(), err)
+		return
+	}
+
+	log.Printf("[DEBUG] Processing invocation token of length %d bytes", len(tokenBytes))
+
+	result, err := h.parser.ParseInvocation(tokenBytes)
+	if err != nil {
+		log.Printf("[ERROR] Invocation parse failed: %v", err)
+		respondError(w, http.StatusUnprocessableEntity, "Failed to parse invocation", err)
+		return
+	}
+
+	log.Printf("[INFO] Successfully parsed invocation: is_invocation=%v, task_type=%s", 
+		result.IsInvocation, 
+		func() string {
+			if result.Task != nil {
+				return result.Task.TaskType
+			}
+			return "none"
+		}())
+	respondJSON(w, http.StatusOK, result)
+}
+
+// ParseFile handles POST /api/parse/delegation/file
 func (h *ParseHandler) ParseFile(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[INFO] Parse file upload request from %s", r.RemoteAddr)
 
-	// Parse multipart form (10MB max)
-	err := r.ParseMultipartForm(10 << 20) // 10 MB
+	tokenBytes, err := h.extractTokenFromFile(r)
 	if err != nil {
-		log.Printf("[ERROR] Failed to parse multipart form: %v", err)
-		respondError(w, http.StatusBadRequest, "Failed to parse multipart form", err)
+		log.Printf("[ERROR] Failed to extract token from file: %v", err)
+		respondError(w, http.StatusBadRequest, err.Error(), err)
 		return
 	}
 
-	// Get the file from the form
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		log.Printf("[ERROR] No file provided: %v", err)
-		respondError(w, http.StatusBadRequest, "No file provided. Use 'file' as the form field name.", err)
-		return
-	}
-	defer file.Close()
+	log.Printf("[DEBUG] Processing file token of length %d bytes", len(tokenBytes))
 
-	log.Printf("[DEBUG] Received file: %s (%d bytes)", header.Filename, header.Size)
-
-
-	// Read file contents
-	tokenBytes, err := io.ReadAll(file)
-	if err != nil {
-		log.Printf("[ERROR] Failed to read file: %v", err)
-		respondError(w, http.StatusInternalServerError, "Failed to read file", err)
-		return
-	}
-
-	log.Printf("[DEBUG] Read %d bytes from file", len(tokenBytes))
-
-	// Parse the delegation
 	result, err := h.parser.ParseDelegation(tokenBytes)
 	if err != nil {
 		log.Printf("[ERROR] Parse failed: %v", err)
@@ -105,4 +122,93 @@ func (h *ParseHandler) ParseFile(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[INFO] Successfully parsed delegation from file: %s", result.CID)
 	respondJSON(w, http.StatusOK, result)
+}
+
+// ParseChainFile handles POST /api/parse/chain/file
+func (h *ParseHandler) ParseChainFile(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[INFO] Parse chain file upload request from %s", r.RemoteAddr)
+
+	tokenBytes, err := h.extractTokenFromFile(r)
+	if err != nil {
+		log.Printf("[ERROR] Failed to extract token from file: %v", err)
+		respondError(w, http.StatusBadRequest, err.Error(), err)
+		return
+	}
+
+	log.Printf("[DEBUG] Processing chain file token of length %d bytes", len(tokenBytes))
+
+	result, err := h.parser.ParseDelegationChain(tokenBytes)
+	if err != nil {
+		log.Printf("[ERROR] Chain parse failed: %v", err)
+		respondError(w, http.StatusUnprocessableEntity, "Failed to parse delegation chain", err)
+		return
+	}
+
+	log.Printf("[INFO] Successfully parsed delegation chain from file: %d delegations", len(result))
+	respondJSON(w, http.StatusOK, result)
+}
+
+// ParseInvocationFile handles POST /api/parse/invocation/file
+func (h *ParseHandler) ParseInvocationFile(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[INFO] Parse invocation file upload request from %s", r.RemoteAddr)
+
+	tokenBytes, err := h.extractTokenFromFile(r)
+	if err != nil {
+		log.Printf("[ERROR] Failed to extract token from file: %v", err)
+		respondError(w, http.StatusBadRequest, err.Error(), err)
+		return
+	}
+
+	log.Printf("[DEBUG] Processing invocation file token of length %d bytes", len(tokenBytes))
+
+	result, err := h.parser.ParseInvocation(tokenBytes)
+	if err != nil {
+		log.Printf("[ERROR] Invocation parse failed: %v", err)
+		respondError(w, http.StatusUnprocessableEntity, "Failed to parse invocation", err)
+		return
+	}
+
+	log.Printf("[INFO] Successfully parsed invocation from file: is_invocation=%v", result.IsInvocation)
+	respondJSON(w, http.StatusOK, result)
+}
+
+// extractTokenFromRequest extracts token from JSON request body
+func (h *ParseHandler) extractTokenFromRequest(r *http.Request) ([]byte, error) {
+	var req models.ParseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return nil, fmt.Errorf("invalid request body: %w", err)
+	}
+
+	if req.Token == "" {
+		return nil, fmt.Errorf("token is required")
+	}
+
+	// Normalize token - primarily for JWT format
+	tokenBytes, err := utils.NormalizeToken(req.Token, req.Format)
+	if err != nil {
+		return nil, fmt.Errorf("invalid token format: %w", err)
+	}
+
+	return tokenBytes, nil
+}
+
+// extractTokenFromFile extracts token from uploaded file
+func (h *ParseHandler) extractTokenFromFile(r *http.Request) ([]byte, error) {
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		return nil, fmt.Errorf("file is required: %w", err)
+	}
+	defer file.Close()
+
+	tokenBytes, err := utils.ReadUploadedFile(file, header)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read uploaded file: %w", err)
+	}
+
+	// Basic validation for UCAN token files
+	if err := utils.ValidateTokenFormat(string(tokenBytes)); err != nil {
+		return nil, fmt.Errorf("invalid UCAN token file: %w", err)
+	}
+
+	return tokenBytes, nil
 }

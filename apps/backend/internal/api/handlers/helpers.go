@@ -3,68 +3,43 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"path/filepath"
-	"strings"
 	"time"
-
-	"github.com/goddhi/ucan-visualizer/internal/models"
 )
+
+// HealthCheck handles GET /health
+func HealthCheck(w http.ResponseWriter, r *http.Request) {
+	response := map[string]interface{}{
+		"service":   "ucan-visualizer",
+		"status":    "healthy",
+		"time":      time.Now(),
+		"version":   "1.0.0",
+	}
+	respondJSON(w, http.StatusOK, response)
+}
 
 // respondJSON sends a JSON response
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
+	}
 }
 
 // respondError sends an error response
 func respondError(w http.ResponseWriter, status int, message string, err error) {
-	errResp := models.ErrorResponse{
-		Error:     http.StatusText(status),
-		Message:   message,
-		Timestamp: time.Now(),
+	response := map[string]interface{}{
+		"error":     http.StatusText(status),
+		"message":   message,
+		"timestamp": time.Now(),
 	}
-
+	
 	if err != nil {
-		errResp.Details = map[string]interface{}{
+		response["details"] = map[string]interface{}{
 			"error": err.Error(),
 		}
 	}
-
-	respondJSON(w, status, errResp)
-}
-
-// HealthCheck returns the health status of the service
-func HealthCheck(w http.ResponseWriter, r *http.Request) {
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"status":  "healthy",
-		"time":    time.Now(),
-		"service": "ucan-visualizer",
-		"version": "1.0.0",
-	})
-}
-
-// isValidUCANFile checks if the file has a valid extension for UCAN tokens
-func isValidUCANFile(filename string) bool {
-	if filename == "" {
-		return true // Allow files without names
-	}
-
-	ext := strings.ToLower(filepath.Ext(filename))
 	
-	// Valid extensions for UCAN CAR files
-	validExtensions := []string{
-		".car",    
-		".ucan",    
-		".cbor",    
-		"",        
-	}
-
-	for _, valid := range validExtensions {
-		if ext == valid {
-			return true
-		}
-	}
-
-	return false
+	respondJSON(w, status, response)
 }
