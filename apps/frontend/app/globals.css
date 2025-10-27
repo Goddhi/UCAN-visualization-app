@@ -1,50 +1,42 @@
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@import "tailwindcss";
+
+@theme {
+  --color-bg-primary: #0a0a0f;
+  --color-bg-secondary: #13131a;
+  --color-bg-tertiary: #1a1a24;
+  --color-bg-hover: #20202e;
+  --color-accent-primary: #6366f1;
+  --color-accent-secondary: #a78bfa;
+  --color-accent-light: #c4b5fd;
+  --color-accent-dark: #4f46e5;
+  --color-text-primary: #e5e7eb;
+  --color-text-secondary: #9ca3af;
+  --color-text-tertiary: #6b7280;
+  --color-border: #2a2a38;
+  --color-border-accent: #3a3a48;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
-
-body {
-  color: var(--foreground);
-  background: var(--background);
-}
-
-* {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.imgDark {
-  display: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
+@layer base {
+  body {
+    @apply bg-bg-primary text-text-primary antialiased;
   }
 
-  .imgLight {
-    display: none;
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
   }
-  .imgDark {
-    display: unset;
+
+  ::-webkit-scrollbar-track {
+    @apply bg-bg-secondary;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border-accent rounded hover:bg-accent-primary;
+  }
+
+  ::selection {
+    @apply bg-accent-primary text-white;
   }
 }

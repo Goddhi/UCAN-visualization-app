@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/create-next-app).
+# UCAN Visualizer Frontend
 
-## Getting Started
+Interactive web interface for parsing, validating, and visualizing UCAN delegation chains.
 
-First, run the development server:
+## Prerequisites
 
+- Node.js 18+ and npm/yarn
+- Backend API running (see `apps/backend`)
+
+## Setup
+
+1. Install dependencies:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+yarn install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Configure environment variables:
+```bash
+cp .env.example .env.local
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Edit `.env.local` and set the backend API URL:
+```
+NEXT_PUBLIC_API_URL=http://localhost:8080
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load Inter, a custom Google Font.
+## Development
 
-## Learn More
+Start the development server:
+```bash
+yarn dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Features
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **UCAN Token Parser**: Parse UCAN tokens from text input or file upload (.car, .ucan, .cbor)
+- **Interactive Graph Visualizer**: Visualize delegation chains as interactive flowcharts
+- **Delegation Details**: View issuer, audience, capabilities, and expiration info
+- **Real-time Validation**: Validate UCAN chains with the backend API
 
-## Deploy on Vercel
+## API Integration
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The frontend connects to the backend API for:
+- `/api/parse/delegation` - Parse UCAN tokens
+- `/api/parse/delegation/file` - Parse UCAN from uploaded files
+- `/api/validate/chain` - Validate delegation chains
+- `/api/graph/delegation` - Generate graph data
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Project Structure
+
+```
+app/
+├── components/       # React components
+├── graph/           # Graph visualization page
+├── settings/        # Settings page
+├── lib/
+│   ├── api/        # API client and types
+│   └── utils/      # Utility functions
+└── page.tsx        # Home page
+```
+
+## Build
+
+Build for production:
+```bash
+yarn build
+```
+
+Start production server:
+```bash
+yarn start
+```
