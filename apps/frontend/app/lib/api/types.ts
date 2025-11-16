@@ -7,8 +7,8 @@ export interface CapabilityInfo {
 }
 
 export interface SignatureInfo {
-  algorithm?: string;
-  value?: string;
+  algorithm: string;
+  valid?: boolean;
 }
 
 export interface ProofInfo {
@@ -38,7 +38,7 @@ export interface DelegationResponse {
 export interface ValidationIssue {
   type: string;
   message: string;
-  severity: 'error' | 'warning' | 'info';
+  severity: "error" | "warning" | "info" | string;
   context?: Record<string, unknown>;
 }
 
@@ -55,17 +55,21 @@ export interface ChainLink {
 }
 
 export interface ValidationSummary {
-  totalLinks?: number;
-  validLinks?: number;
-  invalidLinks?: number;
-  warnings?: number;
-  errors?: number;
+  totalLinks: number;
+  validLinks: number;
+  invalidLinks: number;
+  warningCount: number;
+}
+
+export interface ValidationErrorLink {
+  issuer: string;
+  audience: string;
 }
 
 export interface ValidationError {
+  type: string;
   message: string;
-  code?: string;
-  details?: Record<string, unknown>;
+  link?: ValidationErrorLink;
 }
 
 export interface ValidationResult {
@@ -78,7 +82,7 @@ export interface ValidationResult {
 export interface GraphNode {
   id: string;
   label: string;
-  type: 'root' | 'intermediate' | 'leaf';
+  type: "root" | "intermediate" | "leaf";
   metadata?: Record<string, unknown>;
 }
 
@@ -105,17 +109,17 @@ export interface ErrorResponse {
 
 export interface ParseRequest {
   token: string;
-  format?: 'base64' | 'hex' | 'auto';
+  format?: "base64" | "hex" | "auto";
 }
 
 export interface ValidateRequest {
   token: string;
-  format?: 'base64' | 'hex' | 'auto';
+  format?: "base64" | "hex" | "auto";
 }
 
 export interface GraphRequest {
   token: string;
-  format?: 'base64' | 'hex' | 'auto';
+  format?: "base64" | "hex" | "auto";
 }
 
 export interface HealthResponse {
