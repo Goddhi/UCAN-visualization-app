@@ -2,21 +2,27 @@ package validator
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
-	"github.com/storacha/go-ucanto/core/delegation"
-	"github.com/storacha/go-ucanto/ucan"
 	"github.com/goddhi/ucan-visualizer/internal/models"
+	"github.com/goddhi/ucan-visualizer/internal/services/parser"
 )
 
-type Service struct{}
+type Service struct {
+	parser *parser.Service
+}
 
 func NewService() *Service {
-	return &Service{}
+	return &Service{
+		parser: parser.NewService(),
+	}
 }
 
 func (s *Service) ValidateChain(tokenBytes []byte) (*models.ValidationResult, error) {
-	del, err := delegation.Extract(tokenBytes)
+	// Use parser service to get the chain
+	chain, err := s.parser.ParseDelegationChain(tokenBytes)
 	if err != nil {
 		return &models.ValidationResult{
 			Valid: false,
@@ -24,222 +30,202 @@ func (s *Service) ValidateChain(tokenBytes []byte) (*models.ValidationResult, er
 				Type:    "parse_error",
 				Message: fmt.Sprintf("Failed to parse UCAN: %v", err),
 			},
-			Summary: models.ValidationSummary{
-				TotalLinks:   0,
-				ValidLinks:   0,
-				InvalidLinks: 0,
-				WarningCount: 0,
-			},
+			Summary: models.ValidationSummary{},
 		}, nil
 	}
 
-	chain := []models.ChainLink{}
+	// Validate each delegation in the chain
+	var chainLinks []models.ChainLink
+	var allIssues []models.ValidationIssue
 
-	rootLink := s.validateDelegation(del, 0)
-	chain = append(chain, rootLink)
-
-	summary := models.ValidationSummary{
-		TotalLinks:   len(chain),
-		ValidLinks:   0,
-		InvalidLinks: 0,
-		WarningCount: 0,
+	for _, del := range chain {
+		link := s.validateDelegation(del)
+		chainLinks = append(chainLinks, link)
+		allIssues = append(allIssues, link.Issues...)
 	}
 
-	valid := rootLink.Valid
-	if valid {
-		summary.ValidLinks++
-	} else {
-		summary.InvalidLinks++
-	}
-
-	for _, issue := range rootLink.Issues {
-		if issue.Severity == "warning" {
-			summary.WarningCount++
-		}
-	}
-
+	// Build summary
+	summary := s.buildSummary(chainLinks)
+	
+	// Find root cause if invalid
 	var rootCause *models.ValidationError
-	if !valid {
-		for _, issue := range rootLink.Issues {
-			if issue.Severity == "error" {
-				rootCause = &models.ValidationError{
-					Type:    issue.Type,
-					Message: issue.Message,
-					Link: &models.LinkInfo{
-						Issuer:   rootLink.Issuer,
-						Audience: rootLink.Audience,
-					},
-				}
-				break
-			}
-		}
+	if summary.InvalidLinks > 0 {
+		rootCause = s.findRootCause(allIssues, chainLinks[0])
 	}
 
 	return &models.ValidationResult{
-		Valid:     valid,
-		Chain:     chain,
+		Valid:     summary.InvalidLinks == 0,
+		Chain:     chainLinks,
 		RootCause: rootCause,
 		Summary:   summary,
 	}, nil
 }
 
-// validateDelegation validates a single delegation
-func (s *Service) validateDelegation(del delegation.Delegation, level int) models.ChainLink {
-	issues := []models.ValidationIssue{}
-
+func (s *Service) validateDelegation(del *models.DelegationResponse) models.ChainLink {
+	var issues []models.ValidationIssue
 	now := time.Now()
 
-	exp := del.Expiration()
-	var expiration time.Time
-	if exp != nil {
-		expiration = time.Unix(int64(*exp), 0)
-
-		if ucan.IsExpired(del) {
-			timeExpired := now.Sub(expiration)
+	// Check expiration
+	if !del.Expiration.IsZero() {
+		if del.Expiration.Before(now) {
+			timeExpired := now.Sub(del.Expiration)
 			issues = append(issues, models.ValidationIssue{
 				Type:     "expired",
-				Message:  fmt.Sprintf("UCAN expired %v ago at %s", timeExpired.Round(time.Minute), expiration.Format(time.RFC3339)),
+				Message:  fmt.Sprintf("UCAN expired %v ago", timeExpired.Round(time.Minute)),
 				Severity: "error",
-				Context: map[string]interface{}{
-					"expiration": expiration.Format(time.RFC3339),
-					"now":        now.Format(time.RFC3339),
-					"expired_by": timeExpired.String(),
-				},
 			})
-		} else if now.Add(24 * time.Hour).After(expiration) {
-			timeUntilExpiry := expiration.Sub(now)
+		} else if del.Expiration.Before(now.Add(24 * time.Hour)) {
+			timeUntilExpiry := del.Expiration.Sub(now)
 			issues = append(issues, models.ValidationIssue{
-				Type:     "expiring_soon",
+				Type:     "expiring_soon", 
 				Message:  fmt.Sprintf("UCAN expires in %v", timeUntilExpiry.Round(time.Minute)),
 				Severity: "warning",
-				Context: map[string]interface{}{
-					"expiration":      expiration.Format(time.RFC3339),
-					"time_remaining": timeUntilExpiry.String(),
-				},
 			})
 		}
-	} else {
-		issues = append(issues, models.ValidationIssue{
-			Type:     "no_expiration",
-			Message:  "UCAN has no expiration time (valid indefinitely)",
-			Severity: "info",
-			Context: map[string]interface{}{
-				"note": "UCANs without expiration remain valid until revoked",
-			},
-		})
 	}
 
-	nbf := del.NotBefore()
-	notBefore := time.Unix(int64(nbf), 0)
-
-	if ucan.IsTooEarly(del) {
-		timeUntilValid := notBefore.Sub(now)
+	// Check not-before
+	if del.NotBefore.After(now) {
 		issues = append(issues, models.ValidationIssue{
 			Type:     "not_yet_valid",
-			Message:  fmt.Sprintf("UCAN not valid until %s (in %v)", notBefore.Format(time.RFC3339), timeUntilValid.Round(time.Minute)),
+			Message:  fmt.Sprintf("UCAN not valid until %s", del.NotBefore.Format(time.RFC3339)),
 			Severity: "error",
-			Context: map[string]interface{}{
-				"not_before":       notBefore.Format(time.RFC3339),
-				"now":              now.Format(time.RFC3339),
-				"time_until_valid": timeUntilValid.String(),
-			},
 		})
 	}
 
-	if len(del.Proofs()) > 0 {
-		issues = append(issues, models.ValidationIssue{
-			Type:     "has_proofs",
-			Message:  fmt.Sprintf("Delegation has %d proof(s) in chain", len(del.Proofs())),
-			Severity: "info",
-			Context: map[string]interface{}{
-				"proof_count": len(del.Proofs()),
-				"proof_cids":  s.getProofCIDs(del),
-			},
-		})
-	}
-
-	var capability models.CapabilityInfo
-	if len(del.Capabilities()) > 0 {
-		cap := del.Capabilities()[0]
-		capability = models.CapabilityInfo{
-			With: cap.With(),
-			Can:  cap.Can(),
-			Nb:   make(map[string]interface{}),
-		}
-
-		if len(del.Capabilities()) > 1 {
-			issues = append(issues, models.ValidationIssue{
-				Type:     "multiple_capabilities",
-				Message:  fmt.Sprintf("Delegation contains %d capabilities", len(del.Capabilities())),
-				Severity: "info",
-				Context: map[string]interface{}{
-					"capability_count": len(del.Capabilities()),
-					"note":             "Only the first capability is displayed in summary",
-				},
-			})
-		}
-	} else {
+	// Check capabilities
+	if len(del.Capabilities) == 0 {
 		issues = append(issues, models.ValidationIssue{
 			Type:     "no_capabilities",
 			Message:  "Delegation has no capabilities",
 			Severity: "warning",
-			Context: map[string]interface{}{
-				"note": "A UCAN should typically contain at least one capability",
-			},
 		})
 	}
 
-	if del.Nonce() != "" {
+	// Check proofs (basic info)
+	if len(del.Proofs) > 0 {
 		issues = append(issues, models.ValidationIssue{
-			Type:     "has_nonce",
-			Message:  "Delegation includes a nonce",
+			Type:     "has_proofs",
+			Message:  fmt.Sprintf("Delegation has %d proof(s)", len(del.Proofs)),
 			Severity: "info",
-			Context: map[string]interface{}{
-				"nonce": string(del.Nonce()),
-			},
 		})
 	}
 
-	if len(del.Facts()) > 0 {
-		issues = append(issues, models.ValidationIssue{
-			Type:     "has_facts",
-			Message:  fmt.Sprintf("Delegation includes %d fact(s)", len(del.Facts())),
-			Severity: "info",
-			Context: map[string]interface{}{
-				"fact_count": len(del.Facts()),
-			},
-		})
+	// Determine primary capability
+	var capability models.CapabilityInfo
+	if len(del.Capabilities) > 0 {
+		capability = del.Capabilities[0]
 	}
 
-	valid := len(s.filterErrors(issues)) == 0
+	valid := s.countErrors(issues) == 0
 
 	return models.ChainLink{
-		Level:      level,
-		CID:        del.Link().String(),
-		Issuer:     del.Issuer().DID().String(),
-		Audience:   del.Audience().DID().String(),
+		Level:      del.Level,
+		CID:        del.CID,
+		Issuer:     del.Issuer,
+		Audience:   del.Audience,
 		Capability: capability,
-		Expiration: expiration,
-		NotBefore:  notBefore,
+		Expiration: del.Expiration,
+		NotBefore:  del.NotBefore,
 		Valid:      valid,
 		Issues:     issues,
 	}
 }
 
-func (s *Service) getProofCIDs(del delegation.Delegation) []string {
-	cids := []string{}
-	for _, proof := range del.Proofs() {
-		cids = append(cids, proof.String())
+func (s *Service) validateCapabilityAttenuation(parent, child models.CapabilityInfo) []models.ValidationIssue {
+	var issues []models.ValidationIssue
+
+	// Check resource (with field)
+	if !s.resourceMatches(parent.With, child.With) {
+		issues = append(issues, models.ValidationIssue{
+			Type:     "resource_mismatch",
+			Message:  fmt.Sprintf("Child resource '%s' not covered by parent '%s'", child.With, parent.With),
+			Severity: "error",
+		})
 	}
-	return cids
+
+	// Check ability (can field)
+	if !s.abilityMatches(parent.Can, child.Can) {
+		issues = append(issues, models.ValidationIssue{
+			Type:     "capability_escalation",
+			Message:  fmt.Sprintf("Child ability '%s' exceeds parent '%s'", child.Can, parent.Can),
+			Severity: "error",
+		})
+	}
+
+	return issues
 }
 
-func (s *Service) filterErrors(issues []models.ValidationIssue) []models.ValidationIssue {
-	errors := []models.ValidationIssue{}
-	for _, issue := range issues {
-		if issue.Severity == "error" {
-			errors = append(errors, issue)
+func (s *Service) resourceMatches(parent, child string) bool {
+	if parent == child {
+		return true
+	}
+
+	// Wildcard matching: "storage:*" matches "storage:alice/*"
+	pattern := strings.ReplaceAll(regexp.QuoteMeta(parent), `\*`, ".*")
+	pattern = "^" + pattern + "$"
+	matched, _ := regexp.MatchString(pattern, child)
+	return matched
+}
+
+func (s *Service) abilityMatches(parent, child string) bool {
+	if parent == child || parent == "*" {
+		return true
+	}
+
+	// Wildcard matching: "store/*" matches "store/add"
+	if strings.HasSuffix(parent, "/*") {
+		prefix := strings.TrimSuffix(parent, "/*")
+		return strings.HasPrefix(child, prefix+"/")
+	}
+
+	return false
+}
+
+func (s *Service) buildSummary(links []models.ChainLink) models.ValidationSummary {
+	summary := models.ValidationSummary{
+		TotalLinks: len(links),
+	}
+
+	for _, link := range links {
+		if link.Valid {
+			summary.ValidLinks++
+		} else {
+			summary.InvalidLinks++
+		}
+
+		for _, issue := range link.Issues {
+			if issue.Severity == "warning" {
+				summary.WarningCount++
+			}
 		}
 	}
-	return errors
+
+	return summary
+}
+
+func (s *Service) findRootCause(issues []models.ValidationIssue, firstLink models.ChainLink) *models.ValidationError {
+	for _, issue := range issues {
+		if issue.Severity == "error" {
+			return &models.ValidationError{
+				Type:    issue.Type,
+				Message: issue.Message,
+				Link: &models.LinkInfo{
+					Issuer:   firstLink.Issuer,
+					Audience: firstLink.Audience,
+				},
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Service) countErrors(issues []models.ValidationIssue) int {
+	count := 0
+	for _, issue := range issues {
+		if issue.Severity == "error" {
+			count++
+		}
+	}
+	return count
 }

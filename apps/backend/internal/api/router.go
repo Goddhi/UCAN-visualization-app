@@ -34,6 +34,8 @@ func SetupRouter() http.Handler {
 	// Graph endpoints
 	api.HandleFunc("/graph/delegation", graphHandler.GenerateGraph).Methods("POST")
 	api.HandleFunc("/graph/delegation/file", graphHandler.GenerateGraphFile).Methods("POST")
+	api.HandleFunc("/graph/invocation", graphHandler.GenerateInvocationGraph).Methods("POST")
+	api.HandleFunc("/graph/invocation/file", graphHandler.GenerateInvocationGraphFile).Methods("POST")
 
 	cors := gorillahandlers.CORS(
 		gorillahandlers.AllowedOrigins([]string{"*"}),
