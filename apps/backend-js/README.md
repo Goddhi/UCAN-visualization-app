@@ -12,7 +12,7 @@ This implementation provides:
 - **Capability Registry** - Map endpoints to required UCAN capabilities
 - **UCAN Validator Middleware** - Validate Bearer tokens with capability checking
 - **Example Token Generator** - Auto-generate valid UCANs for testing
-- **Interactive Swagger UI** - Try endpoints with real UCAN tokens
+- **Interactive Swagger UI** - Try endpoints with UCAN tokens
 
 ---
 
@@ -25,7 +25,7 @@ yarn >= 1.22.0
 ### Installation
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/ucan-visualization-app
+git clone https://github.com/Goddhi/UCAN-visualization-app
 cd ucan-visualization-app/apps/backend-js
 
 # Install dependencies
