@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: ucan-visualizer-api
+    runtime: go
+    env: go
+    region: oregon
+    plan: free
+    rootDir: apps/backend
+    buildCommand: go build -o bin/server ./cmd/server
+    startCommand: ./bin/server
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        sync: false
+      - key: HOST
+        value: 0.0.0.0
