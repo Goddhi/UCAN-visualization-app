@@ -15,8 +15,11 @@ func SetupRouter() http.Handler {
 	validateHandler := handlers.NewValidateHandler()
 	graphHandler := handlers.NewGraphHandler()
 
+	r.HandleFunc("/", handlers.RootHandler).Methods("GET")
+
 	// Health check
 	r.HandleFunc("/health", handlers.HealthCheck).Methods("GET")
+	r.HandleFunc("/healthz", handlers.HealthCheck).Methods("GET")
 
 	// API routes
 	api := r.PathPrefix("/api").Subrouter()
