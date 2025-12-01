@@ -3,6 +3,8 @@
   "private": true,
   "scripts": {
     "build": "turbo run build",
+    "build:frontend": "cd apps/frontend && yarn build",
+    "build:backend": "cd apps/backend && yarn build",
     "dev": "turbo run dev --parallel",
     "dev-backend": "cd apps/backend && air",
     "dev-frontend": "cd apps/frontend && next dev",
