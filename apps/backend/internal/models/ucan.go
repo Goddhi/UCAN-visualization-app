@@ -35,8 +35,10 @@ type ProofInfo struct {
 
 type SignatureInfo struct {
 	Algorithm string `json:"algorithm"`
+	Verified  bool   `json:"verified"`        
+	Valid     bool   `json:"valid"`           
+	Error     string `json:"error,omitempty"`
 }
-
 // Enhanced invocation models
 type InvocationResponse struct {
 	Delegation         *DelegationResponse  `json:"delegation"`

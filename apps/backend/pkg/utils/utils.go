@@ -3,9 +3,11 @@ package utils
 import (
 	"encoding/base64"
 	"fmt"
-	"io"
 	"mime/multipart"
 	"strings"
+
+
+	"github.com/goddhi/ucan-visualizer/pkg/streaming"
 )
 
 // NormalizeToken converts token from various formats to bytes for CAR parsing
@@ -39,19 +41,10 @@ func NormalizeToken(token, format string) ([]byte, error) {
 
 // ReadUploadedFile reads the contents of an uploaded file
 func ReadUploadedFile(file multipart.File, header *multipart.FileHeader) ([]byte, error) {
-	// Check file size (limit to 10MB)
-	if header.Size > 10*1024*1024 {
-		return nil, fmt.Errorf("file too large: %d bytes (max 10MB)", header.Size)
-	}
 
-	// Read file contents
-	data, err := io.ReadAll(file)
+	data, err := streaming.ReadFile(file, header)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read file: %w", err)
-	}
-
-	if len(data) == 0 {
-		return nil, fmt.Errorf("empty file")
+		return nil, err
 	}
 
 	// For CAR format files, check if content is base64 and decode if needed
