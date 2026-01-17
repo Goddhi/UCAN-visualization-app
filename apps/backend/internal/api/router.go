@@ -29,6 +29,10 @@ func SetupRouter() http.Handler {
 	// Parse endpoints
 	api.HandleFunc("/parse/delegation", parseHandler.ParseDelegation).Methods("POST")
 	api.HandleFunc("/parse/delegation/file", parseHandler.ParseFile).Methods("POST")
+	api.HandleFunc("/parse/chain", parseHandler.ParseChain).Methods("POST")
+	api.HandleFunc("/parse/chain/file", parseHandler.ParseChainFile).Methods("POST")
+	api.HandleFunc("/parse/invocation", parseHandler.ParseInvocation).Methods("POST")
+	api.HandleFunc("/parse/invocation/file", parseHandler.ParseInvocationFile).Methods("POST")
 
 	// Validate endpoints
 	api.HandleFunc("/validate/chain", validateHandler.ValidateChain).Methods("POST")

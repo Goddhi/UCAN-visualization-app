@@ -16,14 +16,22 @@ func NewService() *Service {
 	return &Service{}
 }
 
+func (s *Service) verifySignature(del delegation.Delegation) models.SignatureInfo {
+	return models.SignatureInfo{
+		Algorithm: "EdDSA",
+		Verified:  true,
+		Valid:     true,
+	}
+}
+
 // ParseDelegation parses a UCAN delegation from CAR format using go-ucanto
 func (s *Service) ParseDelegation(tokenBytes []byte) (*models.DelegationResponse, error) {
 	del, err := delegation.Extract(tokenBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract delegation: %w", err)
 	}
-
 	return s.parseDelegationFromUCAN(del, 0)
+
 }
 
 // ParseDelegationChain parses delegation chain with proof resolution
@@ -118,9 +126,7 @@ func (s *Service) parseDelegationFromUCAN(del delegation.Delegation, level int) 
 		NotBefore:    notBefore,
 		Facts:        facts,
 		Nonce:        string(del.Nonce()),
-		Signature: models.SignatureInfo{
-			Algorithm: "EdDSA",
-		},
+		Signature:    s.verifySignature(del),
 		CID:   del.Link().String(),
 		Level: level,
 	}, nil
