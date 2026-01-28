@@ -101,7 +101,7 @@ export default function GraphPage() {
 
     const payload = {
       token: ucanInput.trim(),
-      format: "auto" as const,
+      format: undefined
     };
 
     try {
