@@ -139,13 +139,7 @@ export const UCANFlow = ({ data, onNodeClick }: UCANFlowProps) => {
         />
         <Controls
           className="!bg-bg-secondary !border-border"
-          style={{
-            button: {
-              backgroundColor: "#13131a",
-              borderColor: "#2a2a38",
-              color: "#9ca3af",
-            },
-          }}
+          // Removed invalid style prop here to fix build error
         />
       </ReactFlow>
     </div>
