@@ -17,18 +17,18 @@ services:
         value: 0.0.0.0
 
   # --- New Frontend Service ---
-- type: web
-    name: ucan-visualization-frontend
-    runtime: node
-    region: oregon
-    plan: free
-    buildCommand: yarn install --production=false && yarn build:frontend
-    startCommand: cd apps/frontend && yarn start
-    autoDeploy: true
-    envVars:
-      - key: NODE_VERSION
-        value: 20.11.0
-      - key: NODE_ENV
-        value: production
-      - key: NEXT_PUBLIC_API_URL
-        value: https://ucan-visualizer-api.onrender.com 
+  - type: web
+      name: ucan-visualization-frontend
+      runtime: node
+      region: oregon
+      plan: free
+      buildCommand: yarn install --production=false && yarn build:frontend
+      startCommand: cd apps/frontend && yarn start
+      autoDeploy: true
+      envVars:
+        - key: NODE_VERSION
+          value: 20.11.0
+        - key: NODE_ENV
+          value: production
+        - key: NEXT_PUBLIC_API_URL
+          value: https://ucan-visualizer-api.onrender.com 
