@@ -9,6 +9,8 @@ export interface UCANNodeData {
   audience: string;
   capabilities: string[];
   expiration?: string;
+  // --- ADD THIS LINE ---
+  proofs?: UCANNodeData[]; 
 }
 
 interface UCANFlowNodeProps {
@@ -52,7 +54,7 @@ export const UCANFlowNode = memo(({ data, selected }: UCANFlowNodeProps) => {
         <div className="min-w-0 flex-1">
           <div className="text-xs text-text-tertiary">UCAN Token</div>
           <div className="text-sm font-mono text-text-primary truncate">
-            {data.id.slice(0, 12)}...
+            {data.id ? data.id.slice(0, 12) : ""}...
           </div>
         </div>
       </div>
