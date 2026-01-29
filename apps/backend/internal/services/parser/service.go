@@ -1,6 +1,8 @@
 package parser
 
 import (
+	"crypto/sha256" 
+	"encoding/hex"  
 	"fmt"
 	"time"
 
@@ -25,32 +27,25 @@ func (s *Service) verifySignature(del delegation.Delegation) models.SignatureInf
 	}
 }
 
-// ParseDelegation parses a UCAN delegation from CAR format OR Raw Token (Transport Block)
+// ParseDelegation parses a UCAN delegation from CAR format OR Raw Token
 func (s *Service) ParseDelegation(tokenBytes []byte) (*models.DelegationResponse, error) {
-	// 1. Try parsing as a CAR file (Archive) first
 	del, err := delegation.Extract(tokenBytes)
 	if err == nil {
-		// Success! It was a CAR file.
 		return s.parseDelegationFromUCAN(del, 0)
 	}
 
-	// 2. Fallback: Try parsing as a Raw UCAN (Transport Block / CBOR)
-	// This uses the utils.ParseUnverifiedCBOR function you have in encode.go
 	if parsedJWT, err := utils.ParseUnverifiedCBOR(tokenBytes); err == nil {
-		return s.mapRawTokenToModel(parsedJWT), nil
+		return s.mapRawTokenToModel(parsedJWT, tokenBytes), nil
 	}
 
-	// 3. Fallback: Try parsing as a standard JWT (ey...)
-	// Just in case the user pasted a standard JWT string
 	if parsedJWT, err := utils.ParseUnverifiedJWT(string(tokenBytes)); err == nil {
-		return s.mapRawTokenToModel(parsedJWT), nil
+		return s.mapRawTokenToModel(parsedJWT, tokenBytes), nil
 	}
 
-	// If all fail, return the original error
-	return nil, fmt.Errorf("failed to extract delegation (not a valid CAR, CBOR, or JWT): %w", err)
+	return nil, fmt.Errorf("failed to extract delegation: %w", err)
 }
 
-// ParseDelegationChain parses delegation chain with proof resolution
+// ParseDelegationChain parses delegation chain
 func (s *Service) ParseDelegationChain(tokenBytes []byte) ([]*models.DelegationResponse, error) {
 	// 1. Try CAR
 	del, err := delegation.Extract(tokenBytes)
@@ -58,7 +53,7 @@ func (s *Service) ParseDelegationChain(tokenBytes []byte) ([]*models.DelegationR
 		return s.parseChain(del), nil
 	}
 
-	// 2. Fallback: Raw Token (Treat as chain of length 1)
+	// 2. Fallback: Raw Token
 	single, err := s.ParseDelegation(tokenBytes)
 	if err == nil {
 		return []*models.DelegationResponse{single}, nil
@@ -67,18 +62,20 @@ func (s *Service) ParseDelegationChain(tokenBytes []byte) ([]*models.DelegationR
 	return nil, fmt.Errorf("failed to extract delegation chain: %w", err)
 }
 
-// Helper: Map the manual utils.ParsedJWT to our models.DelegationResponse
-func (s *Service) mapRawTokenToModel(parsed *utils.ParsedJWT) *models.DelegationResponse {
+// Helper: Map raw token to model AND GENERATE ID
+func (s *Service) mapRawTokenToModel(parsed *utils.ParsedJWT, originalBytes []byte) *models.DelegationResponse {
 	claims := parsed.Claims
 	
-	// Convert Capabilities
+	cid := claims.Cid
+	if cid == "" {
+		hash := sha256.Sum256(originalBytes)
+		cid = "b" + hex.EncodeToString(hash[:])[:40] 
+	}
 	var caps []models.CapabilityInfo
 	for _, att := range claims.Att {
-		// Defensive check for 'can' and 'with'
 		can, _ := att["can"].(string)
 		with, _ := att["with"].(string)
 		
-		// Extract caveats ('nb') if present
 		var nb map[string]interface{}
 		if nbVal, ok := att["nb"]; ok {
 			if nbMap, ok := nbVal.(map[string]interface{}); ok {
@@ -100,7 +97,7 @@ func (s *Service) mapRawTokenToModel(parsed *utils.ParsedJWT) *models.Delegation
 		proofs = append(proofs, models.ProofInfo{
 			CID:   p,
 			Index: i,
-			Type:  "delegation", // raw tokens don't have deeply nested proof objects loaded
+			Type:  "delegation",
 		})
 	}
 
@@ -113,22 +110,15 @@ func (s *Service) mapRawTokenToModel(parsed *utils.ParsedJWT) *models.Delegation
 		Facts:        claims.Facts,
 		Capabilities: caps,
 		Proofs:       proofs,
-		// For raw tokens, we might not have the CID calculated yet, or valid signature verification
 		Signature: models.SignatureInfo{
-			Algorithm: "EdDSA", // Assumption for UCAN
-			Verified:  false,   // We parsed unverified
-			Valid:     true,    // Optimistic for visualization
+			Algorithm: "EdDSA",
+			Verified:  false, 
+			Valid:     true, 
 		},
-		CID: claims.Cid, // Might be empty if not in payload
+		CID:   cid, 
 		Level: 0,
 	}
 }
-
-// ... (KEEP ALL EXISTING FUNCTIONS BELOW: ParseInvocation, parseDelegationFromUCAN, parseChain, etc.) ...
-// Ensure you paste the rest of the file content (ParseInvocation onwards) here so you don't lose it.
-// I will include ParseInvocation below for context, but ensure the whole file is valid.
-
-// ParseInvocation performs comprehensive invocation analysis
 func (s *Service) ParseInvocation(tokenBytes []byte) (*models.InvocationResponse, error) {
 	delegation, err := s.ParseDelegation(tokenBytes)
 	if err != nil {
