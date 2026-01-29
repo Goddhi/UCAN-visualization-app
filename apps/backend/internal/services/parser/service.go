@@ -8,6 +8,7 @@ import (
 	"github.com/storacha/go-ucanto/core/dag/blockstore"
 	"github.com/storacha/go-ucanto/core/delegation"
 	"github.com/goddhi/ucan-visualizer/internal/models"
+	"github.com/goddhi/ucan-visualizer/pkg/utils"
 )
 
 type Service struct{}
@@ -24,25 +25,108 @@ func (s *Service) verifySignature(del delegation.Delegation) models.SignatureInf
 	}
 }
 
-// ParseDelegation parses a UCAN delegation from CAR format using go-ucanto
+// ParseDelegation parses a UCAN delegation from CAR format OR Raw Token (Transport Block)
 func (s *Service) ParseDelegation(tokenBytes []byte) (*models.DelegationResponse, error) {
+	// 1. Try parsing as a CAR file (Archive) first
 	del, err := delegation.Extract(tokenBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract delegation: %w", err)
+	if err == nil {
+		// Success! It was a CAR file.
+		return s.parseDelegationFromUCAN(del, 0)
 	}
-	return s.parseDelegationFromUCAN(del, 0)
 
+	// 2. Fallback: Try parsing as a Raw UCAN (Transport Block / CBOR)
+	// This uses the utils.ParseUnverifiedCBOR function you have in encode.go
+	if parsedJWT, err := utils.ParseUnverifiedCBOR(tokenBytes); err == nil {
+		return s.mapRawTokenToModel(parsedJWT), nil
+	}
+
+	// 3. Fallback: Try parsing as a standard JWT (ey...)
+	// Just in case the user pasted a standard JWT string
+	if parsedJWT, err := utils.ParseUnverifiedJWT(string(tokenBytes)); err == nil {
+		return s.mapRawTokenToModel(parsedJWT), nil
+	}
+
+	// If all fail, return the original error
+	return nil, fmt.Errorf("failed to extract delegation (not a valid CAR, CBOR, or JWT): %w", err)
 }
 
 // ParseDelegationChain parses delegation chain with proof resolution
 func (s *Service) ParseDelegationChain(tokenBytes []byte) ([]*models.DelegationResponse, error) {
+	// 1. Try CAR
 	del, err := delegation.Extract(tokenBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract delegation: %w", err)
+	if err == nil {
+		return s.parseChain(del), nil
 	}
 
-	return s.parseChain(del), nil
+	// 2. Fallback: Raw Token (Treat as chain of length 1)
+	single, err := s.ParseDelegation(tokenBytes)
+	if err == nil {
+		return []*models.DelegationResponse{single}, nil
+	}
+
+	return nil, fmt.Errorf("failed to extract delegation chain: %w", err)
 }
+
+// Helper: Map the manual utils.ParsedJWT to our models.DelegationResponse
+func (s *Service) mapRawTokenToModel(parsed *utils.ParsedJWT) *models.DelegationResponse {
+	claims := parsed.Claims
+	
+	// Convert Capabilities
+	var caps []models.CapabilityInfo
+	for _, att := range claims.Att {
+		// Defensive check for 'can' and 'with'
+		can, _ := att["can"].(string)
+		with, _ := att["with"].(string)
+		
+		// Extract caveats ('nb') if present
+		var nb map[string]interface{}
+		if nbVal, ok := att["nb"]; ok {
+			if nbMap, ok := nbVal.(map[string]interface{}); ok {
+				nb = nbMap
+			}
+		}
+
+		caps = append(caps, models.CapabilityInfo{
+			Can:      can,
+			With:     with,
+			Nb:       nb,
+			Category: s.categorizeCapability(can),
+		})
+	}
+
+	// Convert Proofs
+	var proofs []models.ProofInfo
+	for i, p := range claims.Proofs {
+		proofs = append(proofs, models.ProofInfo{
+			CID:   p,
+			Index: i,
+			Type:  "delegation", // raw tokens don't have deeply nested proof objects loaded
+		})
+	}
+
+	return &models.DelegationResponse{
+		Issuer:       claims.Issuer,
+		Audience:     claims.Audience,
+		Expiration:   time.Unix(claims.Expiry, 0),
+		NotBefore:    time.Unix(claims.NotBefore, 0),
+		Nonce:        claims.Nonce,
+		Facts:        claims.Facts,
+		Capabilities: caps,
+		Proofs:       proofs,
+		// For raw tokens, we might not have the CID calculated yet, or valid signature verification
+		Signature: models.SignatureInfo{
+			Algorithm: "EdDSA", // Assumption for UCAN
+			Verified:  false,   // We parsed unverified
+			Valid:     true,    // Optimistic for visualization
+		},
+		CID: claims.Cid, // Might be empty if not in payload
+		Level: 0,
+	}
+}
+
+// ... (KEEP ALL EXISTING FUNCTIONS BELOW: ParseInvocation, parseDelegationFromUCAN, parseChain, etc.) ...
+// Ensure you paste the rest of the file content (ParseInvocation onwards) here so you don't lose it.
+// I will include ParseInvocation below for context, but ensure the whole file is valid.
 
 // ParseInvocation performs comprehensive invocation analysis
 func (s *Service) ParseInvocation(tokenBytes []byte) (*models.InvocationResponse, error) {
@@ -51,7 +135,6 @@ func (s *Service) ParseInvocation(tokenBytes []byte) (*models.InvocationResponse
 		return nil, err
 	}
 
-	// Comprehensive invocation analysis
 	invocationAnalysis := s.analyzeInvocation(delegation)
 	capabilityAnalysis := s.analyzeCapabilities(delegation.Capabilities)
 
@@ -164,9 +247,8 @@ func (s *Service) parseProofs(proofLinks []ipld.Link, br blockstore.BlockReader,
 				proofs = append(proofs, s.parseProofs(proofDel.Proofs(), br, level+1)...)
 			}
 		}
-	}
-
-	return proofs
+    }
+    return proofs
 }
 
 // Comprehensive invocation analysis
@@ -287,56 +369,56 @@ func (s *Service) categorizeCapability(capability string) string {
 	case s.isInvokeCapability(capability):
 		return "invocation"
 	case len(capability) >= 4 && capability[:4] == "blob":
-		return "blob"
-	case len(capability) >= 5 && capability[:5] == "index":
-		return "index"
-	default:
-		return "general"
-	}
+        return "blob"
+    case len(capability) >= 5 && capability[:5] == "index":
+        return "index"
+    default:
+        return "general"
+    }
 }
 
 // extractCaveats converts IPLD node to map
 func (s *Service) extractCaveats(nb any) map[string]interface{} {
-	result := make(map[string]interface{})
-	if nb == nil {
-		return result
-	}
+    result := make(map[string]interface{})
+    if nb == nil {
+        return result
+    }
 
-	if node, ok := nb.(ipld.Node); ok && node.Kind() == ipld.Kind_Map {
-		iter := node.MapIterator()
-		for !iter.Done() {
-			k, v, err := iter.Next()
-			if err != nil {
-				break
-			}
-			if keyStr, err := k.AsString(); err == nil {
-				result[keyStr] = s.nodeToValue(v)
-			}
-		}
-	}
+    if node, ok := nb.(ipld.Node); ok && node.Kind() == ipld.Kind_Map {
+        iter := node.MapIterator()
+        for !iter.Done() {
+            k, v, err := iter.Next()
+            if err != nil {
+                break
+            }
+            if keyStr, err := k.AsString(); err == nil {
+                result[keyStr] = s.nodeToValue(v)
+            }
+        }
+    }
 
-	return result
+    return result
 }
 
 // nodeToValue converts IPLD node to Go value
 func (s *Service) nodeToValue(node ipld.Node) interface{} {
-	switch node.Kind() {
-	case ipld.Kind_Bool:
-		v, _ := node.AsBool()
-		return v
-	case ipld.Kind_Int:
-		v, _ := node.AsInt()
-		return v
-	case ipld.Kind_Float:
-		v, _ := node.AsFloat()
-		return v
-	case ipld.Kind_String:
-		v, _ := node.AsString()
-		return v
-	case ipld.Kind_Bytes:
-		v, _ := node.AsBytes()
-		return v
-	default:
-		return nil
-	}
+    switch node.Kind() {
+    case ipld.Kind_Bool:
+        v, _ := node.AsBool()
+        return v
+    case ipld.Kind_Int:
+        v, _ := node.AsInt()
+        return v
+    case ipld.Kind_Float:
+        v, _ := node.AsFloat()
+        return v
+    case ipld.Kind_String:
+        v, _ := node.AsString()
+        return v
+    case ipld.Kind_Bytes:
+        v, _ := node.AsBytes()
+        return v
+    default:
+        return nil
+    }
 }
