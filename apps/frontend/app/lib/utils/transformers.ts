@@ -5,7 +5,7 @@ export function transformDelegationToNodeData(
   delegation: DelegationResponse
 ): UCANNodeData & { proofs?: UCANNodeData[] } {
   return {
-    id: delegation.cid, 
+    id: delegation.cid,
     issuer: delegation.issuer,
     audience: delegation.audience,
     capabilities: delegation.capabilities.map(
@@ -17,19 +17,17 @@ export function transformDelegationToNodeData(
 }
 
 function transformProofToNodeData(proof: ProofInfo): UCANNodeData | null {
-  // 1. Handle "Stub" proofs (Raw Tokens often just have a CID link)
   if (!proof.issuer || !proof.audience) {
-    return {
-      id: proof.cid,
-      issuer: "Unknown Issuer", 
-      audience: "Unknown Audience",
-      capabilities: ["Link Only (Unresolved)"],
-      expiration: undefined,
-      proofs: [],
-    };
+     return {
+        id: proof.cid,
+        issuer: "Unknown (Link Only)",
+        audience: "Unknown",
+        capabilities: ["Link Only"],
+        expiration: undefined,
+        proofs: []
+     }
   }
 
-  // 2. Handle Full Proofs (from CAR files)
   return {
     id: proof.cid,
     issuer: proof.issuer,
