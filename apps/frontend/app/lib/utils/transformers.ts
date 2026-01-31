@@ -12,20 +12,21 @@ export function transformDelegationToNodeData(
       (cap) => `${cap.with} → ${cap.can}`
     ),
     expiration: delegation.expiration,
+    // Ensure this defaults to [] if null
     proofs: (delegation.proofs?.map(transformProofToNodeData).filter(Boolean) as UCANNodeData[]) || [],
   };
 }
 
 function transformProofToNodeData(proof: ProofInfo): UCANNodeData | null {
   if (!proof.issuer || !proof.audience) {
-     return {
-        id: proof.cid,
-        issuer: "Unknown (Link Only)",
-        audience: "Unknown",
-        capabilities: ["Link Only"],
-        expiration: undefined,
-        proofs: []
-     }
+    return {
+      id: proof.cid,
+      issuer: "Unknown (Link Only)",
+      audience: "Unknown",
+      capabilities: ["Link Only"],
+      expiration: undefined,
+      proofs: [],
+    };
   }
 
   return {

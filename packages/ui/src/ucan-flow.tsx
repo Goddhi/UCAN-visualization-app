@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react"; 
 import ReactFlow, {
   Node,
   Edge,
@@ -21,12 +21,11 @@ interface UCANFlowProps {
   onNodeClick?: (node: UCANNodeData) => void;
 }
 
-// Custom node types
 const nodeTypes = {
   ucanNode: UCANFlowNode,
 };
 
-// Helper function to convert UCAN data to react-flow nodes and edges
+// ... (Keep buildFlowData function exactly as is) ...
 function buildFlowData(
   ucanData: UCANNodeData & { proofs?: UCANNodeData[] },
   parentId: string | null = null,
@@ -37,7 +36,6 @@ function buildFlowData(
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
-  // Add current node
   nodes.push({
     id: ucanData.id,
     type: "ucanNode",
@@ -45,7 +43,6 @@ function buildFlowData(
     data: ucanData,
   });
 
-  // Add edge from parent if exists
   if (parentId) {
     edges.push({
       id: `${parentId}-${ucanData.id}`,
@@ -53,18 +50,11 @@ function buildFlowData(
       target: ucanData.id,
       type: "smoothstep",
       animated: true,
-      style: {
-        stroke: "#6366f1",
-        strokeWidth: 2,
-      },
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: "#6366f1",
-      },
+      style: { stroke: "#6366f1", strokeWidth: 2 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: "#6366f1" },
     });
   }
 
-  // Process proofs (children)
   if (ucanData.proofs && ucanData.proofs.length > 0) {
     const childCount = ucanData.proofs.length;
     const horizontalSpacing = 400;
@@ -75,15 +65,7 @@ function buildFlowData(
     ucanData.proofs.forEach((proof, index) => {
       const childX = startX + index * horizontalSpacing;
       const childY = yOffset + verticalSpacing;
-
-      const childData = buildFlowData(
-        proof,
-        ucanData.id,
-        childX,
-        childY,
-        level + 1
-      );
-
+      const childData = buildFlowData(proof, ucanData.id, childX, childY, level + 1);
       nodes.push(...childData.nodes);
       edges.push(...childData.edges);
     });
@@ -93,13 +75,20 @@ function buildFlowData(
 }
 
 export const UCANFlow = ({ data, onNodeClick }: UCANFlowProps) => {
-  const { nodes: initialNodes, edges: initialEdges } = useMemo(
+  const { nodes: newNodes, edges: newEdges } = useMemo(
     () => buildFlowData(data, null, 400, 50),
     [data]
   );
 
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(newNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(newEdges);
+
+  // --- FIX START: Sync state when data changes ---
+  useEffect(() => {
+    setNodes(newNodes);
+    setEdges(newEdges);
+  }, [newNodes, newEdges, setNodes, setEdges]);
+  // --- FIX END ---
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -131,16 +120,8 @@ export const UCANFlow = ({ data, onNodeClick }: UCANFlowProps) => {
         defaultViewport={{ x: 0, y: 0, zoom: 1 }}
         className="bg-bg-primary"
       >
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={20}
-          size={1}
-          color="#2a2a38"
-        />
-        <Controls
-          className="!bg-bg-secondary !border-border"
-          // Removed invalid style prop here to fix build error
-        />
+        <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#2a2a38" />
+        <Controls className="!bg-bg-secondary !border-border" />
       </ReactFlow>
     </div>
   );
