@@ -426,7 +426,7 @@ export default function GraphPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h2 className="text-lg font-semibold text-text-primary">
-                      Delegation tree
+                      Delegation tree v2
                     </h2>
                     <p className="text-xs text-text-tertiary">
                       Drag to explore or zoom to focus on a branch.
