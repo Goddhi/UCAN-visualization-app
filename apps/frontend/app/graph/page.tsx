@@ -178,8 +178,10 @@ export default function GraphPage() {
     const root = transformDelegationToNodeData(ucanData);
 
     if (validationResult?.chain) {
+      
+      type RecursiveNode = UCANNodeData & { proofs?: RecursiveNode[] };
 
-      const hydrate = (node: any): any => {
+      const hydrate = (node: RecursiveNode): RecursiveNode => {
         const updatedNode = { ...node };
 
         const proofDetails = validationResult.chain.find(
@@ -195,17 +197,20 @@ export default function GraphPage() {
         }
 
         if (updatedNode.proofs && updatedNode.proofs.length > 0) {
-          updatedNode.proofs = updatedNode.proofs.map((child: any) => hydrate(child));
+          updatedNode.proofs = updatedNode.proofs.map((child) => 
+            hydrate(child as RecursiveNode)
+          );
         }
 
         return updatedNode;
       };
 
-      return hydrate(root);
+      // 3. Start the process (casting root to the recursive type)
+      return hydrate(root as RecursiveNode);
     }
 
     return root;
-  }, [ucanData, validationResult]);
+  }, [ucanData, validationResult])
 
   const activeNodeDetails = useMemo(() => {
     // This line satisfies the linter because it USES 'selectedNode'
