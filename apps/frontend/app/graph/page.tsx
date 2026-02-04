@@ -226,13 +226,8 @@ export default function GraphPage() {
   const activeNodeDetails = useMemo(() => {
     if (!selectedNode) return null;
 
-    // If the node has valid data, use it directly
-    if (selectedNode.issuer && selectedNode.issuer !== "Unknown") {
-      return selectedNode;
-    }
-
-    // If it's a "Link Only" node (ID is a CID), try to find it in the validation chain
     if (validationResult?.chain) {
+      // Try to find the proof/link in the chain that matches this node's CID
       const proofDetails = validationResult.chain.find(
         (link) => link.cid === selectedNode.id
       );
@@ -240,13 +235,13 @@ export default function GraphPage() {
       if (proofDetails) {
         return {
           ...selectedNode,
+          // Overwrite with the verified full DIDs from the validator
           issuer: proofDetails.issuer,
           audience: proofDetails.audience,
-          // Format the capability object into the string format the UI expects
+          // Format the capability for the UI
           capabilities: [
             `${proofDetails.capability.with} : ${proofDetails.capability.can}`
           ],
-          // Keep the original expiration or undefined if not in proof details
           expiration: selectedNode.expiration
         };
       }
@@ -254,7 +249,7 @@ export default function GraphPage() {
 
     return selectedNode;
   }, [selectedNode, validationResult]);
-
+  
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
