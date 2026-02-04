@@ -202,6 +202,31 @@ export default function GraphPage() {
 
     return initialData;
   }, [ucanData, validationResult]);
+
+  const activeNodeDetails = useMemo(() => {
+    // This line satisfies the linter because it USES 'selectedNode'
+    if (!selectedNode) return null;
+
+    if (validationResult?.chain) {
+      const proofDetails = validationResult.chain.find(
+        (link) => link.cid === selectedNode.id
+      );
+
+      if (proofDetails) {
+        return {
+          ...selectedNode,
+          issuer: proofDetails.issuer,
+          audience: proofDetails.audience,
+          capabilities: [
+            `${proofDetails.capability.with} : ${proofDetails.capability.can}`
+          ],
+          expiration: selectedNode.expiration
+        };
+      }
+    }
+
+    return selectedNode;
+  }, [selectedNode, validationResult]);
   
   return (
     <div className="space-y-8">
