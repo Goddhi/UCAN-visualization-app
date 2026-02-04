@@ -175,32 +175,36 @@ export default function GraphPage() {
   const flowData = useMemo(() => {
     if (!ucanData) return null;
 
-    const initialData = transformDelegationToNodeData(ucanData);
+    const root = transformDelegationToNodeData(ucanData);
 
     if (validationResult?.chain) {
-      initialData.nodes = initialData.nodes.map((node) => {
+
+      const hydrate = (node: any): any => {
+        const updatedNode = { ...node };
 
         const proofDetails = validationResult.chain.find(
           (link) => link.cid === node.id
         );
 
         if (proofDetails) {
-          return {
-            ...node,
-            issuer: proofDetails.issuer,
-            audience: proofDetails.audience,
-            capabilities: [
-              `${proofDetails.capability.with} : ${proofDetails.capability.can}`
-            ],
-            expiration: node.expiration 
-          };
+          updatedNode.issuer = proofDetails.issuer;
+          updatedNode.audience = proofDetails.audience;
+          updatedNode.capabilities = [
+            `${proofDetails.capability.with} : ${proofDetails.capability.can}`
+          ];
         }
-        
-        return node;
-      });
+
+        if (updatedNode.proofs && updatedNode.proofs.length > 0) {
+          updatedNode.proofs = updatedNode.proofs.map((child: any) => hydrate(child));
+        }
+
+        return updatedNode;
+      };
+
+      return hydrate(root);
     }
 
-    return initialData;
+    return root;
   }, [ucanData, validationResult]);
 
   const activeNodeDetails = useMemo(() => {
