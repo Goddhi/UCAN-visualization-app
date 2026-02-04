@@ -172,83 +172,36 @@ export default function GraphPage() {
     }
   };
 
-  const flowData = useMemo(
-    () => (ucanData ? transformDelegationToNodeData(ucanData) : null),
-    [ucanData],
-  );
+  const flowData = useMemo(() => {
+    if (!ucanData) return null;
 
-  const summaryItems = useMemo(() => {
-    if (!ucanData) return [];
-    return [
-      {
-        label: "Issuer",
-        value: formatDid(ucanData.issuer),
-        helper: ucanData.issuer,
-      },
-      {
-        label: "Audience",
-        value: formatDid(ucanData.audience),
-        helper: ucanData.audience,
-      },
-      {
-        label: "Expiration",
-        value: ucanData.expiration
-          ? new Date(ucanData.expiration).toLocaleDateString()
-          : "No expiry",
-        helper: ucanData.expiration
-          ? formatDateTime(ucanData.expiration)
-          : "Token does not expire",
-      },
-      {
-        label: "Proofs",
-        value: ucanData.proofs?.length ?? 0,
-        helper: "Linked delegations",
-      },
-    ];
-  }, [ucanData]);
-
-  const graphStats = useMemo(() => {
-    if (!graphData) return null;
-    const root = graphData.nodes.filter((node) => node.type === "root").length;
-    const leaves = graphData.nodes.filter((node) => node.type === "leaf").length;
-    const intermediates = graphData.nodes.filter(
-      (node) => node.type === "intermediate",
-    ).length;
-
-    return {
-      root,
-      leaves,
-      intermediates,
-      edges: graphData.edges.length,
-    };
-  }, [graphData]);
-
-  const activeNodeDetails = useMemo(() => {
-    if (!selectedNode) return null;
+    const initialData = transformDelegationToNodeData(ucanData);
 
     if (validationResult?.chain) {
-      // Try to find the proof/link in the chain that matches this node's CID
-      const proofDetails = validationResult.chain.find(
-        (link) => link.cid === selectedNode.id
-      );
+      initialData.nodes = initialData.nodes.map((node) => {
 
-      if (proofDetails) {
-        return {
-          ...selectedNode,
-          // Overwrite with the verified full DIDs from the validator
-          issuer: proofDetails.issuer,
-          audience: proofDetails.audience,
-          // Format the capability for the UI
-          capabilities: [
-            `${proofDetails.capability.with} : ${proofDetails.capability.can}`
-          ],
-          expiration: selectedNode.expiration
-        };
-      }
+        const proofDetails = validationResult.chain.find(
+          (link) => link.cid === node.id
+        );
+
+        if (proofDetails) {
+          return {
+            ...node,
+            issuer: proofDetails.issuer,
+            audience: proofDetails.audience,
+            capabilities: [
+              `${proofDetails.capability.with} : ${proofDetails.capability.can}`
+            ],
+            expiration: node.expiration 
+          };
+        }
+        
+        return node;
+      });
     }
 
-    return selectedNode;
-  }, [selectedNode, validationResult]);
+    return initialData;
+  }, [ucanData, validationResult]);
   
   return (
     <div className="space-y-8">
