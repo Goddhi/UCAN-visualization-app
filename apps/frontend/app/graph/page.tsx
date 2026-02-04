@@ -223,6 +223,38 @@ export default function GraphPage() {
     };
   }, [graphData]);
 
+  const activeNodeDetails = useMemo(() => {
+    if (!selectedNode) return null;
+
+    // If the node has valid data, use it directly
+    if (selectedNode.issuer && selectedNode.issuer !== "Unknown") {
+      return selectedNode;
+    }
+
+    // If it's a "Link Only" node (ID is a CID), try to find it in the validation chain
+    if (validationResult?.chain) {
+      const proofDetails = validationResult.chain.find(
+        (link) => link.cid === selectedNode.id
+      );
+
+      if (proofDetails) {
+        return {
+          ...selectedNode,
+          issuer: proofDetails.issuer,
+          audience: proofDetails.audience,
+          // Format the capability object into the string format the UI expects
+          capabilities: [
+            `${proofDetails.capability.with} : ${proofDetails.capability.can}`
+          ],
+          // Keep the original expiration or undefined if not in proof details
+          expiration: selectedNode.expiration
+        };
+      }
+    }
+
+    return selectedNode;
+  }, [selectedNode, validationResult]);
+
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -454,41 +486,45 @@ export default function GraphPage() {
                       Node details
                     </h3>
                     <span className="text-[11px] text-text-tertiary">
-                      {selectedNode ? "Active" : "Click a node"}
+                      {activeNodeDetails ? "Active" : "Click a node"}
                     </span>
                   </div>
-                  {selectedNode ? (
+                  {activeNodeDetails ? (
                     <div className="mt-3 space-y-3 text-xs">
                       <DetailField label="Token ID">
                         <span className="font-mono break-all text-text-secondary">
-                          {selectedNode.id}
+                          {activeNodeDetails.id}
                         </span>
                       </DetailField>
                       <DetailField label="Issuer">
                         <span className="font-mono break-all text-text-secondary">
-                          {selectedNode.issuer}
+                          {activeNodeDetails.issuer || "Unknown (Link Only)"}
                         </span>
                       </DetailField>
                       <DetailField label="Audience">
                         <span className="font-mono break-all text-text-secondary">
-                          {selectedNode.audience}
+                          {activeNodeDetails.audience || "Unknown"}
                         </span>
                       </DetailField>
                       <DetailField label="Capabilities">
                         <div className="flex flex-wrap gap-2">
-                          {selectedNode.capabilities.map((cap) => (
-                            <span
-                              key={cap}
-                              className="rounded-full bg-accent-primary/10 px-2 py-0.5 text-[11px] text-accent-primary"
-                            >
-                              {cap}
-                            </span>
-                          ))}
+                          {activeNodeDetails.capabilities.length > 0 ? (
+                            activeNodeDetails.capabilities.map((cap) => (
+                              <span
+                                key={cap}
+                                className="rounded-full bg-accent-primary/10 px-2 py-0.5 text-[11px] text-accent-primary"
+                              >
+                                {cap}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-text-tertiary italic">Link Only</span>
+                          )}
                         </div>
                       </DetailField>
-                      {selectedNode.expiration && (
+                      {activeNodeDetails.expiration && (
                         <DetailField label="Expiration">
-                          {formatDateTime(selectedNode.expiration)}
+                          {formatDateTime(activeNodeDetails.expiration)}
                         </DetailField>
                       )}
                     </div>
