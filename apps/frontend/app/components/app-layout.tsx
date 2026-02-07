@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconGraph, IconHome } from "@repo/ui/icons";
+import { IconGraph, IconHome, IconBuilder } from "@repo/ui/icons";
+
 
 const navItems = [
   { href: "/", label: "Home", icon: IconHome },
   { href: "/graph", label: "Graph", icon: IconGraph },
+  { href: "/builder", label: "Builder", icon: IconBuilder }, 
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
