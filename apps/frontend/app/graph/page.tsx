@@ -65,6 +65,48 @@ const extractErrorMessage = (error: unknown) => {
   return "Request failed";
 };
 
+const getInspectorUrl = (text: string) => {
+  if (!text) return null;
+
+  // 1. If it's a DID (Identity), use the Universal Resolver
+  if (text.startsWith("did:")) {
+    return `https://dev.uniresolver.io/#/1.0/identifiers/${text}`;
+  }
+
+  // 2. If it's a CID (Content ID), use the IPLD Explorer
+  // Matches "bafy..." (v1) or "Qm..." (v0)
+  if (text.includes("bafy") || text.includes("Qm")) {
+    const cid = text.match(/(bafy|Qm)[a-zA-Z0-9]+/)?.[0];
+    if (cid) return `https://explore.ipld.io/#/explore/${cid}`;
+  }
+
+  return null;
+};
+const generateSnippet = (node: any) => {
+  if (!node) return "";
+  const capString = node.capabilities[0] || "";
+  // Simple parse of "resource : ability"
+  const [resource, ability] = capString.includes(" : ") 
+    ? capString.split(" : ") 
+    : [node.issuer, "store/add"];
+
+  return `import * as Client from '@ucanto/client'
+
+// 1. Setup your identity
+const signer = await getKey() 
+
+// 2. Invoke the capability
+const result = await Client.invoke({
+  issuer: signer,
+  audience: "${node.audience}",
+  capability: {
+    with: "${resource}",
+    can: "${ability}"
+  },
+  proofs: [parse(token)] // The parent token
+}).execute(connection)`;
+};
+
 export default function GraphPage() {
   const [ucanInput, setUcanInput] = useState("");
   const [ucanData, setUcanData] = useState<DelegationResponse | null>(null);
@@ -547,62 +589,116 @@ export default function GraphPage() {
   </div>
 </section>
               <div className="grid gap-4 lg:grid-cols-2">
-                <section className="rounded-2xl border border-border bg-bg-secondary p-5">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-text-primary">
-                      Node details
-                    </h3>
-                    <span className="text-[11px] text-text-tertiary">
-                      {activeNodeDetails ? "Active" : "Click a node"}
-                    </span>
-                  </div>
-                  {activeNodeDetails ? (
-                    <div className="mt-3 space-y-3 text-xs">
-                      <DetailField label="Token ID">
-                        <span className="font-mono break-all text-text-secondary">
-                          {activeNodeDetails.id}
-                        </span>
-                      </DetailField>
-                      <DetailField label="Issuer">
+              <section className="rounded-2xl border border-border bg-bg-secondary p-5">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold text-text-primary">
+                    Node details
+                  </h3>
+                  <span className="text-[11px] text-text-tertiary">
+                    {activeNodeDetails ? "Active" : "Click a node"}
+                  </span>
+                </div>
+
+                {activeNodeDetails ? (
+                  <div className="mt-3 space-y-3 text-xs">
+                    <DetailField label="Token ID">
+                      <span className="font-mono break-all text-text-secondary">
+                        {activeNodeDetails.id}
+                      </span>
+                    </DetailField>
+
+                    {/* --- UPDATED ISSUER SECTION --- */}
+                    <DetailField label="Issuer">
+                      <div className="flex flex-col gap-1">
                         <span className="font-mono break-all text-text-secondary">
                           {activeNodeDetails.issuer || "Unknown (Link Only)"}
                         </span>
-                      </DetailField>
-                      <DetailField label="Audience">
-                        <span className="font-mono break-all text-text-secondary">
-                          {activeNodeDetails.audience || "Unknown"}
-                        </span>
-                      </DetailField>
-                      <DetailField label="Capabilities">
+                        {/* Feature 9: Smart Link for DIDs */}
+                        {getInspectorUrl(activeNodeDetails.issuer) && (
+                          <a
+                            href={getInspectorUrl(activeNodeDetails.issuer) || "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-1 w-fit text-[10px] text-accent-primary hover:underline"
+                          >
+                            <span>🔍 Inspect Identity</span>
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                          </a>
+                        )}
+                      </div>
+                    </DetailField>
+
+                    <DetailField label="Audience">
+                      <span className="font-mono break-all text-text-secondary">
+                        {activeNodeDetails.audience || "Unknown"}
+                      </span>
+                    </DetailField>
+
+                    <DetailField label="Capabilities">
+                      <div className="flex flex-col gap-2">
                         <div className="flex flex-wrap gap-2">
                           {activeNodeDetails.capabilities.length > 0 ? (
                             activeNodeDetails.capabilities.map((cap) => (
-                              <span
-                                key={cap}
-                                className="rounded-full bg-accent-primary/10 px-2 py-0.5 text-[11px] text-accent-primary"
-                              >
-                                {cap}
-                              </span>
+                              <div key={cap} className="flex flex-col items-start gap-1 p-2 rounded border border-border/50 bg-bg-primary/30">
+                                <span className="font-mono text-[11px] text-accent-primary break-all">
+                                  {cap}
+                                </span>
+                                
+                                {getInspectorUrl(cap) && (
+                                  <a
+                                    href={getInspectorUrl(cap) || "#"}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="flex items-center gap-1 mt-1 text-[10px] text-text-tertiary hover:text-accent-primary transition-colors"
+                                  >
+                                    <span>📦 View Content on IPFS</span>
+                                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                                  </a>
+                                )}
+                              </div>
                             ))
                           ) : (
-                            <span className="text-text-tertiary italic">Link Only</span>
+                            <span className="text-text-tertiary italic">
+                              Link Only
+                            </span>
                           )}
                         </div>
-                      </DetailField>
-                      {activeNodeDetails.expiration && (
-                        <DetailField label="Expiration">
-                          {formatDateTime(activeNodeDetails.expiration)}
-                        </DetailField>
-                      )}
+                      </div>
+                    </DetailField>
+                    <div className="pt-2 border-t border-border/40 mt-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-text-tertiary font-semibold">
+                          Usage Snippet
+                        </span>
+                        <button
+                          onClick={() =>
+                            navigator.clipboard.writeText(
+                              generateSnippet(activeNodeDetails)
+                            )
+                          }
+                          className="text-[10px] text-accent-primary hover:text-text-primary"
+                        >
+                          Copy Code
+                        </button>
+                      </div>
+                      <pre className="p-3 bg-black/20 rounded-lg text-[10px] text-text-secondary overflow-x-auto font-mono border border-border/50">
+                        {generateSnippet(activeNodeDetails)}
+                      </pre>
                     </div>
-                  ) : (
-                    <p className="mt-3 text-xs text-text-tertiary">
-                      Click any node in the canvas to inspect issuer, audience,
-                      and capability list.
-                    </p>
-                  )}
-                </section>
 
+                    {activeNodeDetails.expiration && (
+                      <DetailField label="Expiration">
+                        {formatDateTime(activeNodeDetails.expiration)}
+                      </DetailField>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs text-text-tertiary">
+                    Click any node in the canvas to inspect issuer, audience,
+                    and capability list.
+                  </p>
+                )}
+              </section>
                 <section className="rounded-2xl border border-border bg-bg-secondary p-5">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-text-primary">
