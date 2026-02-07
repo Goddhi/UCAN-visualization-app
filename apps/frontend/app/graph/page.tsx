@@ -12,6 +12,7 @@ import { Button } from "@repo/ui/button";
 import { UCANFlow } from "@repo/ui/ucan-flow";
 import type { UCANNodeData } from "@repo/ui/ucan-flow-node";
 import { ApiError, ucanApi } from "../lib/api/client";
+import { toPng } from 'html-to-image';
 import type {
   DelegationResponse,
   GraphEdge,
@@ -236,6 +237,74 @@ export default function GraphPage() {
 
     return selectedNode;
   }, [selectedNode, validationResult]);
+
+  const summaryItems = useMemo(() => {
+    if (!ucanData) return [];
+    return [
+      {
+        label: "Issuer",
+        value: formatDid(ucanData.issuer),
+        helper: ucanData.issuer,
+      },
+      {
+        label: "Audience",
+        value: formatDid(ucanData.audience),
+        helper: ucanData.audience,
+      },
+      {
+        label: "Expiration",
+        value: ucanData.expiration
+          ? new Date(ucanData.expiration).toLocaleDateString()
+          : "No expiry",
+        helper: ucanData.expiration
+          ? formatDateTime(ucanData.expiration)
+          : "Token does not expire",
+      },
+      {
+        label: "Proofs",
+        value: ucanData.proofs?.length ?? 0,
+        helper: "Linked delegations",
+      },
+    ];
+  }, [ucanData]);
+
+  const graphStats = useMemo(() => {
+    if (!graphData) return null;
+    const root = graphData.nodes.filter((node) => node.type === "root").length;
+    const leaves = graphData.nodes.filter((node) => node.type === "leaf").length;
+    const intermediates = graphData.nodes.filter(
+      (node) => node.type === "intermediate",
+    ).length;
+
+    return {
+      root,
+      leaves,
+      intermediates,
+      edges: graphData.edges.length,
+    };
+  }, [graphData]);
+  const handleExportImage = async () => {
+    // 1. Find the graph container element
+    const graphElement = document.getElementById('ucan-graph-canvas');
+    if (!graphElement) return;
+
+    try {
+      // 2. Convert HTML to PNG Data URL
+      const dataUrl = await toPng(graphElement, {
+        backgroundColor: '#09090b', // Matches your app's dark background (bg-bg-primary)
+        quality: 1.0,
+        pixelRatio: 2, // High resolution (Retina support)
+      });
+
+      // 3. Trigger Download
+      const link = document.createElement('a');
+      link.download = `ucan-graph-${Date.now()}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      console.error('Failed to export graph image', err);
+    }
+  };
   
   return (
     <div className="space-y-8">
@@ -436,31 +505,47 @@ export default function GraphPage() {
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-border bg-bg-secondary p-5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h2 className="text-lg font-semibold text-text-primary">
-                      Delegation tree v2
-                    </h2>
-                    <p className="text-xs text-text-tertiary">
-                      Drag to explore or zoom to focus on a branch.
-                    </p>
-                  </div>
-                  <span className="text-[11px] text-text-tertiary">
-                    Canvas mirrors backend graph
-                  </span>
-                </div>
-                <div className="mt-4 h-[480px] rounded-xl border border-dashed border-border bg-bg-primary/20">
-                  {flowData ? (
-                    <UCANFlow data={flowData} onNodeClick={setSelectedNode} />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-xs text-text-tertiary">
-                      Unable to render graph
-                    </div>
-                  )}
-                </div>
-              </section>
+<section className="rounded-2xl border border-border bg-bg-secondary p-5">
+  <div className="flex flex-wrap items-center justify-between gap-2">
+    <div>
+      <h2 className="text-lg font-semibold text-text-primary">
+        Delegation tree v2
+      </h2>
+      <p className="text-xs text-text-tertiary">
+        Drag to explore or zoom to focus on a branch.
+      </p>
+    </div>
+    
+    {/* --- CHANGE 1: ADD THIS BUTTON GROUP --- */}
+    <div className="flex items-center gap-3">
+      <span className="text-[11px] text-text-tertiary">
+        Canvas mirrors backend graph
+      </span>
+      <button
+        onClick={handleExportImage}
+        className="text-[10px] font-medium text-accent-primary hover:underline border border-accent-primary/20 hover:bg-accent-primary/10 transition-colors rounded px-2 py-1"
+      >
+        Download PNG
+      </button>
+    </div>
+    {/* --------------------------------------- */}
 
+  </div>
+
+  {/* --- CHANGE 2: ADD THE ID HERE --- */}
+  <div 
+    id="ucan-graph-canvas" 
+    className="mt-4 h-[480px] rounded-xl border border-dashed border-border bg-bg-primary/20"
+  >
+    {flowData ? (
+      <UCANFlow data={flowData} onNodeClick={setSelectedNode} />
+    ) : (
+      <div className="flex h-full items-center justify-center text-xs text-text-tertiary">
+        Unable to render graph
+      </div>
+    )}
+  </div>
+</section>
               <div className="grid gap-4 lg:grid-cols-2">
                 <section className="rounded-2xl border border-border bg-bg-secondary p-5">
                   <div className="flex items-center justify-between">
