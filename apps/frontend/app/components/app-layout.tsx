@@ -2,56 +2,38 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconGraph, IconHome, IconBuilder } from "@repo/ui/icons";
-
+import { IconHome, IconGraph, IconBuilder } from "@repo/ui/icons"; 
 
 const navItems = [
   { href: "/", label: "Home", icon: IconHome },
   { href: "/graph", label: "Graph", icon: IconGraph },
-  { href: "/builder", label: "Builder", icon: IconBuilder }, 
+  { href: "/builder", label: "Builder", icon: IconBuilder },
+  { href: "/inspector", label: "Invocation Inspector", icon: IconBuilder }, // <--- ADDED
 ];
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div className="min-h-screen bg-bg-primary text-text-primary">
-      <header className="border-b border-border bg-bg-secondary/70 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4">
-          <Link href="/" className="flex items-center gap-2 font-semibold">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border text-lg">
-              U
-            </span>
-            <span className="text-sm uppercase tracking-[0.3em] text-text-tertiary">
-              UCAN
-            </span>
-          </Link>
-          <nav className="flex items-center gap-1 text-sm">
-            {navItems.map((item) => {
-              const active =
-                pathname === item.href ||
-                (item.href !== "/" && pathname.startsWith(item.href));
-              const Icon = item.icon;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-2 rounded-full border px-3 py-1.5 transition ${
-                    active
-                      ? "border-accent-primary bg-accent-primary/10 text-accent-primary"
-                      : "border-transparent text-text-secondary hover:border-border hover:text-text-primary"
-                  }`}
-                >
-                  <Icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
+    <div className="flex min-h-screen bg-bg-primary text-text-primary">
+      <aside className="fixed left-0 top-0 h-screen w-64 border-r border-border bg-bg-secondary p-6">
+        <div className="mb-10 flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-primary text-white font-bold">U</div>
+          <span className="text-lg font-bold tracking-wider">UCAN</span>
         </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-7xl px-4 py-8">{children}</main>
+        <nav className="space-y-2">
+          {navItems.map((item) => {
+            const isActive = pathname === item.href;
+            return (
+              <Link key={item.href} href={item.href} className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm font-medium transition-colors ${isActive ? "bg-accent-primary/10 text-accent-primary" : "text-text-secondary hover:bg-bg-primary hover:text-text-primary"}`}>
+                <item.icon className="h-5 w-5" />
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </aside>
+      <main className="ml-64 flex-1 p-8"><div className="mx-auto max-w-7xl">{children}</div></main>
     </div>
   );
 }
