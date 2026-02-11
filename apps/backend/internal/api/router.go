@@ -7,15 +7,19 @@ import (
 	"github.com/gorilla/mux"
 
 	"github.com/goddhi/ucan-visualizer/internal/api/handlers"
+	"github.com/goddhi/ucan-visualizer/internal/services/diff" 
 )
 
 func SetupRouter() http.Handler {
 	r := mux.NewRouter()
 
+	diffService := diff.NewService() 
+
 	// Initialize handlers
 	parseHandler := handlers.NewParseHandler()
 	validateHandler := handlers.NewValidateHandler()
 	graphHandler := handlers.NewGraphHandler()
+	diffHandler := handlers.NewDiffHandler(diffService) 
 
 	r.HandleFunc("/", handlers.RootHandler).Methods("GET")
 
@@ -44,6 +48,9 @@ func SetupRouter() http.Handler {
 	api.HandleFunc("/graph/invocation", graphHandler.GenerateInvocationGraph).Methods("POST")
 	api.HandleFunc("/graph/invocation/file", graphHandler.GenerateInvocationGraphFile).Methods("POST")
 
+	// diff endpoint 
+	api.HandleFunc("/diff", diffHandler.GenerateDiff).Methods("POST")
+	
 	cors := gorillahandlers.CORS(
 		gorillahandlers.AllowedOrigins([]string{"*"}),
 		gorillahandlers.AllowedMethods([]string{"GET", "POST", "OPTIONS"}),
