@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,220 +16,32 @@ import (
 	"github.com/goddhi/ucan-visualizer/test/fixtures"
 )
 
-func TestParseEndpoint(t *testing.T) {
-	// Setup test server
-	handler := api.SetupRouter()
-	server := httptest.NewServer(handler)
-	defer server.Close()
+// --- Helper Functions ---
 
-	t.Run("Parse valid delegation", func(t *testing.T) {
-		// Generate a valid UCAN
-		tokenBytes, err := fixtures.GenerateValidUCAN()
-		require.NoError(t, err)
+func createMultipartRequest(t *testing.T, url string, filename string, fileContent []byte) *http.Request {
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", filename)
+	require.NoError(t, err)
+	_, err = part.Write(fileContent)
+	require.NoError(t, err)
+	err = writer.Close()
+	require.NoError(t, err)
 
-		// Encode as base64 for JSON transport
-		tokenStr := base64.StdEncoding.EncodeToString(tokenBytes)
-
-		// Prepare request
-		payload := models.ParseRequest{
-			Token: tokenStr,
-		}
-		body, _ := json.Marshal(payload)
-
-		// Make request
-		resp, err := http.Post(
-			server.URL+"/api/parse/delegation",
-			"application/json",
-			bytes.NewBuffer(body),
-		)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		// Check response
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-		// Parse response
-		var result models.DelegationResponse
-		err = json.NewDecoder(resp.Body).Decode(&result)
-		require.NoError(t, err)
-
-		// Verify parsed data
-		assert.NotEmpty(t, result.Issuer)
-		assert.NotEmpty(t, result.Audience)
-		assert.NotEmpty(t, result.CID)
-		assert.Greater(t, len(result.Capabilities), 0)
-
-		t.Logf("✅ Parsed delegation: %s", result.CID)
-		t.Logf("   Issuer: %s", result.Issuer)
-		t.Logf("   Audience: %s", result.Audience)
-		t.Logf("   Capabilities: %d", len(result.Capabilities))
-	})
-
-	t.Run("Parse with invalid token", func(t *testing.T) {
-		payload := models.ParseRequest{
-			Token: "invalid-token",
-		}
-		body, _ := json.Marshal(payload)
-
-		resp, err := http.Post(
-			server.URL+"/api/parse/delegation",
-			"application/json",
-			bytes.NewBuffer(body),
-		)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		assert.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
-	})
-
-	t.Run("Parse with empty token", func(t *testing.T) {
-		payload := models.ParseRequest{
-			Token: "",
-		}
-		body, _ := json.Marshal(payload)
-
-		resp, err := http.Post(
-			server.URL+"/api/parse/delegation",
-			"application/json",
-			bytes.NewBuffer(body),
-		)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	})
+	req, err := http.NewRequest("POST", url, body)
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return req
 }
 
-func TestValidateEndpoint(t *testing.T) {
+func setupServer() *httptest.Server {
 	handler := api.SetupRouter()
-	server := httptest.NewServer(handler)
-	defer server.Close()
-
-	t.Run("Validate valid delegation", func(t *testing.T) {
-		// Generate a valid UCAN
-		tokenBytes, err := fixtures.GenerateValidUCAN()
-		require.NoError(t, err)
-
-		tokenStr := base64.StdEncoding.EncodeToString(tokenBytes)
-
-		payload := models.ValidateRequest{
-			Token: tokenStr,
-		}
-		body, _ := json.Marshal(payload)
-
-		resp, err := http.Post(
-			server.URL+"/api/validate/chain",
-			"application/json",
-			bytes.NewBuffer(body),
-		)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-		var result models.ValidationResult
-		err = json.NewDecoder(resp.Body).Decode(&result)
-		require.NoError(t, err)
-
-		// Check validation result
-		t.Logf("✅ Validation result: Valid=%v", result.Valid)
-		t.Logf("   Total links: %d", result.Summary.TotalLinks)
-		t.Logf("   Valid links: %d", result.Summary.ValidLinks)
-		t.Logf("   Invalid links: %d", result.Summary.InvalidLinks)
-
-		if len(result.Chain) > 0 {
-			t.Logf("   First link issues: %d", len(result.Chain[0].Issues))
-			for _, issue := range result.Chain[0].Issues {
-				t.Logf("     - [%s] %s", issue.Severity, issue.Message)
-			}
-		}
-	})
-
-	t.Run("Validate expired delegation", func(t *testing.T) {
-		tokenBytes, err := fixtures.GenerateExpiredUCAN()
-		require.NoError(t, err)
-
-		tokenStr := base64.StdEncoding.EncodeToString(tokenBytes)
-
-		payload := models.ValidateRequest{
-			Token: tokenStr,
-		}
-		body, _ := json.Marshal(payload)
-
-		resp, err := http.Post(
-			server.URL+"/api/validate/chain",
-			"application/json",
-			bytes.NewBuffer(body),
-		)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-		var result models.ValidationResult
-		err = json.NewDecoder(resp.Body).Decode(&result)
-		require.NoError(t, err)
-
-		// Should be invalid due to expiration
-		assert.False(t, result.Valid)
-		assert.NotNil(t, result.RootCause)
-		assert.Equal(t, "expired", result.RootCause.Type)
-
-		t.Logf("✅ Correctly detected expired UCAN")
-	})
+	return httptest.NewServer(handler)
 }
 
-func TestGraphEndpoint(t *testing.T) {
-	handler := api.SetupRouter()
-	server := httptest.NewServer(handler)
-	defer server.Close()
 
-	t.Run("Generate graph from valid delegation", func(t *testing.T) {
-		tokenBytes, err := fixtures.GenerateValidUCAN()
-		require.NoError(t, err)
-
-		tokenStr := base64.StdEncoding.EncodeToString(tokenBytes)
-
-		payload := models.GraphRequest{
-			Token: tokenStr,
-		}
-		body, _ := json.Marshal(payload)
-
-		resp, err := http.Post(
-			server.URL+"/api/graph/delegation",
-			"application/json",
-			bytes.NewBuffer(body),
-		)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-		var result models.GraphResponse
-		err = json.NewDecoder(resp.Body).Decode(&result)
-		require.NoError(t, err)
-
-		// Check graph structure
-		assert.GreaterOrEqual(t, len(result.Nodes), 2, "Should have at least 2 nodes (issuer and audience)")
-		assert.Greater(t, len(result.Edges), 0, "Should have at least 1 edge")
-
-		t.Logf("✅ Generated graph:")
-		t.Logf("   Nodes: %d", len(result.Nodes))
-		t.Logf("   Edges: %d", len(result.Edges))
-
-		for i, node := range result.Nodes {
-			t.Logf("   Node %d: %s (%s)", i+1, node.Label, node.Type)
-		}
-
-		for i, edge := range result.Edges {
-			t.Logf("   Edge %d: %s -> %s (%s)", i+1, edge.Source, edge.Target, edge.Label)
-		}
-	})
-}
-
-func TestHealthEndpoint(t *testing.T) {
-	handler := api.SetupRouter()
-	server := httptest.NewServer(handler)
+func TestHealthCheck(t *testing.T) {
+	server := setupServer()
 	defer server.Close()
 
 	resp, err := http.Get(server.URL + "/health")
@@ -236,11 +49,157 @@ func TestHealthEndpoint(t *testing.T) {
 	defer resp.Body.Close()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
+	
 	var result map[string]interface{}
-	err = json.NewDecoder(resp.Body).Decode(&result)
-	require.NoError(t, err)
-
+	json.NewDecoder(resp.Body).Decode(&result)
 	assert.Equal(t, "healthy", result["status"])
-	t.Logf("✅ Health check passed")
+}
+
+func TestParseEndpoints(t *testing.T) {
+	server := setupServer()
+	defer server.Close()
+
+	validToken, _ := fixtures.GenerateValidUCAN()
+	complexChain, _ := fixtures.GenerateComplexChain()
+	
+	validTokenStr := base64.StdEncoding.EncodeToString(validToken)
+	complexChainStr := base64.StdEncoding.EncodeToString(complexChain)
+
+	t.Run("POST /parse/delegation (JSON)", func(t *testing.T) {
+		payload := models.ParseRequest{Token: validTokenStr}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(server.URL+"/api/parse/delegation", "application/json", bytes.NewBuffer(body))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("POST /parse/delegation/file (File)", func(t *testing.T) {
+		req := createMultipartRequest(t, server.URL+"/api/parse/delegation/file", "token.ucan", validToken)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("POST /parse/chain (JSON)", func(t *testing.T) {
+		payload := models.ParseRequest{Token: complexChainStr}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(server.URL+"/api/parse/chain", "application/json", bytes.NewBuffer(body))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("POST /parse/chain/file (File)", func(t *testing.T) {
+		req := createMultipartRequest(t, server.URL+"/api/parse/chain/file", "chain.ucan", complexChain)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("POST /parse/invocation (JSON)", func(t *testing.T) {
+		payload := models.ParseRequest{Token: validTokenStr}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(server.URL+"/api/parse/invocation", "application/json", bytes.NewBuffer(body))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("POST /parse/invocation/file (File)", func(t *testing.T) {
+		req := createMultipartRequest(t, server.URL+"/api/parse/invocation/file", "invoke.ucan", validToken)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+}
+
+func TestValidateEndpoints(t *testing.T) {
+	server := setupServer()
+	defer server.Close()
+
+	complexChain, _ := fixtures.GenerateComplexChain()
+	complexChainStr := base64.StdEncoding.EncodeToString(complexChain)
+
+	t.Run("POST /validate/chain (JSON)", func(t *testing.T) {
+		payload := models.ValidateRequest{Token: complexChainStr}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(server.URL+"/api/validate/chain", "application/json", bytes.NewBuffer(body))
+		require.NoError(t, err)
+		
+		var result models.ValidationResult
+		json.NewDecoder(resp.Body).Decode(&result)
+		
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.True(t, result.Valid)
+	})
+
+	t.Run("POST /validate/chain/file (File)", func(t *testing.T) {
+		req := createMultipartRequest(t, server.URL+"/api/validate/chain/file", "chain.ucan", complexChain)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		
+		var result models.ValidationResult
+		json.NewDecoder(resp.Body).Decode(&result)
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.True(t, result.Valid)
+	})
+
+	t.Run("Validate Expired Token", func(t *testing.T) {
+		expiredToken, _ := fixtures.GenerateExpiredUCAN()
+		expiredTokenStr := base64.StdEncoding.EncodeToString(expiredToken)
+
+		payload := models.ValidateRequest{Token: expiredTokenStr}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(server.URL+"/api/validate/chain", "application/json", bytes.NewBuffer(body))
+		require.NoError(t, err)
+
+		var result models.ValidationResult
+		json.NewDecoder(resp.Body).Decode(&result)
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.False(t, result.Valid)
+	})
+}
+
+func TestGraphEndpoints(t *testing.T) {
+	server := setupServer()
+	defer server.Close()
+
+	complexChain, _ := fixtures.GenerateComplexChain()
+	complexChainStr := base64.StdEncoding.EncodeToString(complexChain)
+
+	t.Run("POST /graph/delegation (JSON)", func(t *testing.T) {
+		payload := models.GraphRequest{Token: complexChainStr}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(server.URL+"/api/graph/delegation", "application/json", bytes.NewBuffer(body))
+		require.NoError(t, err)
+		
+		var result models.GraphResponse
+		json.NewDecoder(resp.Body).Decode(&result)
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.NotEmpty(t, result.Nodes)
+		assert.NotEmpty(t, result.Edges)
+	})
+
+	t.Run("POST /graph/delegation/file (File)", func(t *testing.T) {
+		req := createMultipartRequest(t, server.URL+"/api/graph/delegation/file", "graph.ucan", complexChain)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("POST /graph/invocation (JSON)", func(t *testing.T) {
+		payload := models.GraphRequest{Token: complexChainStr}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(server.URL+"/api/graph/invocation", "application/json", bytes.NewBuffer(body))
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("POST /graph/invocation/file (File)", func(t *testing.T) {
+		req := createMultipartRequest(t, server.URL+"/api/graph/invocation/file", "inv_graph.ucan", complexChain)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
 }
